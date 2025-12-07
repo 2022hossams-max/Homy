@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تفاصيل الطلب #{{ order.id }}</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; text-align: right; direction: rtl; background-color: #f8f8f8; }
+        h1 { color: #333; }
+        .details-box { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .details-box p { margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: right; }
+        th { background-color: #f2f2f2; }
+        .back-link { display: inline-block; margin-bottom: 15px; color: #007bff; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <a href="{{ url_for('admin_panel') }}" class="back-link">العودة إلى لوحة التحكم</a>
+    <h1>تفاصيل الطلب رقم #{{ order.id }}</h1>
+    
+    <div class="details-box">
+        <h2>معلومات الطلب</h2>
+        <p><strong>حالة الطلب:</strong> <span style="font-weight: bold; color: {% if order.status == 'Delivered' %}green{% elif order.status == 'New' %}red{% else %}orange{% endif %};">{{ order.status }}</span></p>
+        <p><strong>التاريخ:</strong> {{ order.date_placed.strftime('%Y-%m-%d %H:%M') }}</p>
+        <p><strong>الإجمالي:</strong> ${{ order.total_price | round(2) }}</p>
+        
+        <h2>معلومات العميل</h2>
+        <p><strong>الاسم:</strong> {{ order.customer_name }}</p>
+        <p><strong>البريد الإلكتروني:</strong> {{ order.customer_email }}</p>
+    </div>
+
+    <h2>عناصر الطلب</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>المنتج</th>
+                <th>السعر للوحدة</th>
+                <th>الكمية</th>
+                <th>الإجمالي</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in order.items %}
+            <tr>
+                <td>{{ item.product_name }}</td>
+                <td>${{ item.price | round(2) }}</td>
+                <td>{{ item.quantity }}</td>
+                <td>${{ (item.price * item.quantity) | round(2) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة تحكم المتجر</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; text-align: right; direction: rtl; background-color: #f8f8f8; }
+        h1, h2 { color: #333; border-bottom: 2px solid #ccc; padding-bottom: 10px; }
+        form { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 30px; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+        input[type="text"], input[type="number"], textarea { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-top: 20px; }
+        button:hover { background-color: #0056b3; }
+        table { width: 100%; border-collapse: collapse; background-color: white; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: right; }
+        th { background-color: #f2f2f2; }
+        .back-link { display: inline-block; margin-bottom: 15px; color: #007bff; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <a href="{{ url_for('home') }}" class="back-link">العودة إلى المتجر الرئيسي</a>
+    <h1>لوحة تحكم إدارة المنتجات والطلبات</h1>
+    
+    {% if success_message %}
+    <p style="color: green; font-weight: bold;">{{ success_message }}</p>
+    {% endif %}
+
+    <h2>إضافة منتج جديد</h2>
+    <form method="POST" action="{{ url_for('add_product') }}">
+        <label for="name">اسم المنتج:</label>
+        <input type="text" id="name" name="name" required>
+
+        <label for="price">السعر ($):</label>
+        <input type="number" id="price" name="price" step="0.01" required>
+
+        <label for="stock">رصيد المخزون:</label>
+        <input type="number" id="stock" name="stock" value="1" required>
+
+        <label for="description">الوصف:</label>
+        <textarea id="description" name="description"></textarea>
+
+        <button type="submit">إضافة المنتج</button>
+    </form>
+
+    <h2>المنتجات الحالية ({{ products | length }})</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>الاسم</th>
+                <th>السعر</th>
+                <th>المخزون</th>
+                <th>الوصف</th>
+                <th>الإجراءات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for product in products %}
+            <tr>
+                <td>{{ product.id }}</td>
+                <td>{{ product.name }}</td>
+                <td>${{ product.price | round(2) }}</td>
+                <td>{{ product.stock }}</td>
+                <td>{{ product.description }}</td>
+                <td>
+                    <a href="{{ url_for('edit_product', product_id=product.id) }}">تعديل</a>
+                    <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف المنتج {{ product.name }}؟');">
+                        <button type="submit" style="background-color: #dc3545; padding: 5px 10px;">حذف</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <hr style="margin: 50px 0;">
+
+    <h2>سجل الطلبات ({{ orders | length }})</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>رقم الطلب</th>
+                <th>العميل</th>
+                <th>البريد الإلكتروني</th>
+                <th>الإجمالي</th>
+                <th>التاريخ</th>
+                <th>الحالة</th>
+                <th>الإجراءات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr>
+                <td><a href="{{ url_for('order_details', order_id=order.id) }}">#{{ order.id }}</a></td>
+                <td>{{ order.customer_name }}</td>
+                <td>{{ order.customer_email }}</td>
+                <td>${{ order.total_price | round(2) }}</td>
+                <td>{{ order.date_placed.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ order.status }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('update_order_status', order_id=order.id) }}" style="display: inline-flex; gap: 5px;">
+                        <select name="status">
+                            <option value="New" {% if order.status == 'New' %}selected{% endif %}>جديد</option>
+                            <option value="Processing" {% if order.status == 'Processing' %}selected{% endif %}>قيد المعالجة</option>
+                            <option value="Shipped" {% if order.status == 'Shipped' %}selected{% endif %}>تم الشحن</option>
+                            <option value="Delivered" {% if order.status == 'Delivered' %}selected{% endif %}>تم التوصيل</option>
+                        </select>
+                        <button type="submit" style="background-color: #5cb85c; padding: 5px 10px; margin-top: 0;">تحديث</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

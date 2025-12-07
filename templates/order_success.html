@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تم الطلب بنجاح</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .success-container { text-align: center; max-width: 600px; margin: 50px auto; padding: 30px; background: #e6ffe6; border: 1px solid #4CAF50; border-radius: 8px; }
+        .success-container h1 { color: #4CAF50; }
+        .success-container a { display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="success-container">
+        <h1>🎉 تهانينا!</h1>
+        <p>تم استلام طلبك بنجاح.</p>
+        <p>رقم الطلب الخاص بك هو: <strong>#{{ order_id }}</strong></p>
+        <p>سنقوم بمعالجة طلبك قريباً.</p>
+        <a href="{{ url_for('home') }}">العودة إلى المتجر</a>
+    </div>
+</body>
+</html>
+

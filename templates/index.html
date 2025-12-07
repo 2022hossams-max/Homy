@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>متجر Termux</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <h1>متجر Termux الإلكتروني</h1>
+        <button id="view-cart-btn">🛒 سلة المشتريات (<span id="cart-count">0</span>)</button>
+        <a href="{{ url_for('admin_panel') }}" class="admin-link">لوحة الإدارة</a>
+    </header>
+    
+    <main>
+        <section id="products-container">
+            <h2>جاري تحميل المنتجات...</h2>
+        </section>
+
+        <section id="cart-display" class="hidden">
+            <h2>سلة المشتريات</h2>
+            <div id="cart-items-list"></div>
+            <p>الإجمالي: <strong id="cart-total">$0.00</strong></p>
+            <button id="clear-cart-btn">تفريغ السلة</button>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
