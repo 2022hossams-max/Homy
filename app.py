@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, render_template, request, session, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 import os 
 from werkzeug.utils import secure_filename 
 
@@ -22,22 +22,16 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 db = SQLAlchemy(app)
 
-# --- وظائف مساعدة لرفع الملفات ---
-
+# --- وظائف مساعدة لرفع الملفات (كما هي) ---
 def allowed_file(filename):
-    """التحقق من أن الامتداد مسموح به."""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def handle_image_upload(file):
-    """
-    يتلقى ملف الصورة، يحفظه في مجلد UPLOAD_FOLDER ويعيد المسار النسبي له.
-    """
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
-        # التأكد من وجود مجلد الرفع قبل الحفظ
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
             
@@ -54,6 +48,23 @@ class Category(db.Model):
     name = db.Column(db.String(50), unique=True, nullable=False)
     products = db.relationship('Product', backref='category', lazy=True)
 
+class Review(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
+    rating = db.Column(db.Integer, nullable=False)
+    comment = db.Column(db.Text, nullable=True)
+    reviewer_name = db.Column(db.String(100), default='Anonymous')
+    date_posted = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'rating': self.rating,
+            'comment': self.comment,
+            'reviewer_name': self.reviewer_name,
+            'date_posted': self.date_posted.strftime('%Y-%m-%d')
+        }
+
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -62,8 +73,19 @@ class Product(db.Model):
     stock = db.Column(db.Integer, default=0)
     image_url = db.Column(db.String(200), default='/static/placeholder.png') 
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
+    reviews = db.relationship('Review', backref='product', lazy='dynamic') 
+
+    def get_rating_info(self):
+        avg_rating = db.session.query(func.avg(Review.rating)).filter(Review.product_id == self.id).scalar()
+        review_count = self.reviews.count()
+        
+        return {
+            'average': round(avg_rating, 2) if avg_rating else 0,
+            'count': review_count
+        }
 
     def to_dict(self):
+        rating_info = self.get_rating_info() 
         return {
             'id': self.id,
             'name': self.name,
@@ -71,7 +93,8 @@ class Product(db.Model):
             'description': self.description,
             'stock': self.stock,
             'image_url': self.image_url,
-            'category_name': self.category.name if self.category else 'N/A'
+            'category_name': self.category.name if self.category else 'N/A',
+            'rating': rating_info
         }
 
 class Order(db.Model):
@@ -90,10 +113,9 @@ class OrderItem(db.Model):
     price = db.Column(db.Float, nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
 
-# --- وظائف مساعدة للسلة والمفضلة ---
+# --- وظائف مساعدة للسلة والمفضلة (كما هي) ---
 
 def get_cart_details():
-    """يحصل على تفاصيل سلة المشتريات من الجلسة."""
     if 'cart' not in session:
         session['cart'] = {}
     
@@ -116,7 +138,6 @@ def get_cart_details():
     return cart_items, total_price
 
 def get_favorites_details():
-    """يحصل على تفاصيل المنتجات المفضلة من الجلسة."""
     favorites_ids = [int(id) for id in session.get('favorites', [])]
     favorite_products = Product.query.filter(Product.id.in_(favorites_ids)).all()
     
@@ -128,13 +149,39 @@ def get_favorites_details():
 def home():
     categories = Category.query.all()
     favorites_count = len(session.get('favorites', []))
-    # 🚨 تم التأكد من عدم وجود أي خطأ هنا، الخطأ كان في index.html
     return render_template('index.html', categories=categories, favorites_count=favorites_count) 
 
 @app.route('/product/<int:product_id>')
 def product_detail(product_id):
     product = Product.query.get_or_404(product_id)
-    return render_template('product_detail.html', product=product)
+    reviews = Review.query.filter_by(product_id=product.id).order_by(Review.date_posted.desc()).all()
+    rating_info = product.get_rating_info() 
+    
+    return render_template('product_detail.html', product=product, reviews=reviews, rating_info=rating_info)
+
+# --- مسارات التقييمات (Review Routes) ---
+
+@app.route('/review/submit/<int:product_id>', methods=['POST'])
+def submit_review(product_id):
+    rating = request.form.get('rating', type=int)
+    comment = request.form.get('comment')
+    reviewer_name = request.form.get('reviewer_name') or 'Anonymous'
+
+    if rating is None or not 1 <= rating <= 5:
+        flash('يجب اختيار تقييم من 1 إلى 5 نجوم.', 'error')
+        return redirect(url_for('product_detail', product_id=product_id))
+
+    new_review = Review(
+        product_id=product_id,
+        rating=rating,
+        comment=comment,
+        reviewer_name=reviewer_name
+    )
+    
+    db.session.add(new_review)
+    db.session.commit()
+    flash('تم إرسال تقييمك بنجاح!', 'success')
+    return redirect(url_for('product_detail', product_id=product_id))
 
 # --- مسارات API (لجلب البيانات بواسطة JavaScript) ---
 
@@ -160,7 +207,7 @@ def get_products():
 # --- مسارات المفضلة (Wishlist Routes) ---
 
 @app.route('/favorites')
-def favorites_view():
+def favorites_view(): # 📌 تم التأكد من وجود هذه الدالة
     favorite_products = get_favorites_details()
     return render_template('favorites.html', products=favorite_products)
 
@@ -192,7 +239,7 @@ def toggle_favorite(product_id):
         "is_added": is_added
     })
     
-# --- مسارات السلة (Cart Routes) ---
+# --- مسارات السلة (Cart, Checkout) (كما هي) ---
 
 @app.route('/cart/add/<int:product_id>')
 def add_to_cart(product_id):
@@ -248,7 +295,6 @@ def checkout():
         db.session.commit()
         
         for item in cart_items:
-            # تحديث المخزون (خصم الكمية)
             product = Product.query.get(item['product_id'])
             if product and product.stock >= item['quantity']:
                 product.stock -= item['quantity']
@@ -274,9 +320,8 @@ def checkout():
 def order_success(order_id):
     return render_template('order_success.html', order_id=order_id)
 
-# --- مسارات الإدارة والمصادقة (Admin & Auth Routes) ---
+# --- مسارات الإدارة والمصادقة (Admin & Auth Routes) (كما هي) ---
 
-# 📌 دالة تسجيل الدخول (Admin Login)
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login(): 
     if request.method == 'POST':
@@ -307,6 +352,8 @@ def admin_panel():
     
     return render_template('admin.html', products=products, orders=orders, categories=categories, success_message=success_message) 
 
+# ... (بقية مسارات الإدارة: add_product, edit_product, delete_product, update_order_status, order_details, add_category, delete_category) ...
+
 @app.route('/add_product', methods=['POST'])
 def add_product():
     if session.get('is_admin') != True: return redirect(url_for('admin_login'))
@@ -317,7 +364,6 @@ def add_product():
     stock = request.form.get('stock')
     category_id = request.form.get('category_id')
 
-    # معالجة ملف الصورة
     image_file = request.files.get('image_file') 
     image_url = '/static/placeholder.png' 
     
@@ -352,7 +398,6 @@ def edit_product(product_id):
 
     if request.method == 'POST':
         try:
-            # معالجة رفع الملفات عند التعديل
             image_file = request.files.get('image_file')
             image_url = product.image_url 
 
@@ -433,7 +478,6 @@ def delete_category(category_id):
 
 if __name__ == '__main__':
     with app.app_context():
-        # التأكد من وجود مجلد الرفع عند بدء التشغيل
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
             
