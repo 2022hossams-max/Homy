@@ -6,8 +6,9 @@ import os
 from werkzeug.utils import secure_filename 
 
 # --- إعدادات التطبيق ---
-ADMIN_USERNAME = 'hossam_admin'
-ADMIN_PASSWORD = 'strong_password123' 
+ADMIN_USERNAME_DEFAULT = 'hossam_admin' # المشرف الافتراضي
+ADMIN_PASSWORD_DEFAULT = 'strong_password123' 
+LOW_STOCK_THRESHOLD = 5 # حد تنبيه المخزون المنخفض
 # ------------------------
 
 # إعدادات رفع الملفات
@@ -30,14 +31,11 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def handle_image_upload(file):
-    """
-    يتلقى ملف الصورة، يحفظه في مجلد UPLOAD_FOLDER ويعيد المسار النسبي له.
-    """
+    """حفظ ملف الصورة وإرجاع مساره النسبي."""
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
-        # التأكد من وجود مجلد الرفع قبل الحفظ
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
             
@@ -49,6 +47,24 @@ def handle_image_upload(file):
 
 # --- نماذج قاعدة البيانات (Models) ---
 
+class AdminUser(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    # ملاحظة: تم استخدام تخزين نصي لكلمة المرور لتبسيط المثال، يفضل استخدام التجزئة (Hashing) في الإنتاج.
+    password_hash = db.Column(db.String(128), nullable=False) 
+
+    # حقول الصلاحيات
+    can_manage_products = db.Column(db.Boolean, default=False)
+    can_manage_orders = db.Column(db.Boolean, default=False)
+    can_manage_reviews = db.Column(db.Boolean, default=False)
+    can_manage_admins = db.Column(db.Boolean, default=False) # صلاحية إدارة المشرفين (أعلى صلاحية)
+
+    def verify_password(self, password):
+        return self.password_hash == password 
+
+    def set_password(self, password):
+        self.password_hash = password
+
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
@@ -57,7 +73,7 @@ class Category(db.Model):
 class Review(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    rating = db.Column(db.Integer, nullable=False) # من 1 إلى 5
+    rating = db.Column(db.Integer, nullable=False) 
     comment = db.Column(db.Text, nullable=True)
     reviewer_name = db.Column(db.String(100), default='Anonymous')
     date_posted = db.Column(db.DateTime, default=datetime.utcnow)
@@ -83,11 +99,13 @@ class Product(db.Model):
 
     def get_rating_info(self):
         """حساب متوسط التقييم وعدد التقييمات"""
-        avg_rating = db.session.query(func.avg(Review.rating)).filter(Review.product_id == self.id).scalar()
+        # جلب القيمة مباشرة أو استخدام 0 إذا لم تكن هناك تقييمات
+        avg_rating_result = db.session.query(func.avg(Review.rating)).filter(Review.product_id == self.id).scalar()
+        avg_rating = avg_rating_result if avg_rating_result is not None else 0
         review_count = self.reviews.count()
         
         return {
-            'average': round(avg_rating, 2) if avg_rating else 0,
+            'average': round(avg_rating, 2),
             'count': review_count
         }
 
@@ -120,7 +138,7 @@ class OrderItem(db.Model):
     price = db.Column(db.Float, nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
 
-# --- وظائف مساعدة للسلة والمفضلة ---
+# --- وظائف مساعدة للسلة والمفضلة (Cart & Favorites Helpers) ---
 
 def get_cart_details():
     """يحصل على تفاصيل سلة المشتريات من الجلسة."""
@@ -330,7 +348,7 @@ def checkout():
 def order_success(order_id):
     return render_template('order_success.html', order_id=order_id)
 
-# --- مسارات الإدارة والمصادقة (Admin & Auth Routes) ---
+# --- مسارات الإدارة والمصادقة والصلاحيات (Admin & Auth Routes) ---
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login(): 
@@ -338,42 +356,145 @@ def admin_login():
         username = request.form.get('username')
         password = request.form.get('password')
         
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-            session['is_admin'] = True
-            return redirect(url_for('admin_panel', message='مرحباً أيها المشرف!'))
+        user = AdminUser.query.filter_by(username=username).first()
+        
+        # التحقق من كلمة المرور (مقارنة مباشرة، يجب استخدام التجزئة في الإنتاج)
+        if user and user.verify_password(password):
+            session['admin_id'] = user.id
+            session['username'] = user.username
+            session['permissions'] = {
+                'products': user.can_manage_products,
+                'orders': user.can_manage_orders,
+                'reviews': user.can_manage_reviews,
+                'admins': user.can_manage_admins
+            }
+            flash(f'مرحباً {user.username}، تم تسجيل الدخول بنجاح!', 'success')
+            return redirect(url_for('admin_panel'))
         else:
-            return render_template('admin_login.html', error='خطأ في اسم المستخدم أو كلمة المرور.')
+            flash('خطأ في اسم المستخدم أو كلمة المرور.', 'error')
+            return render_template('admin_login.html')
+            
     return render_template('admin_login.html')
 
 @app.route('/admin/logout')
 def admin_logout():
-    session.pop('is_admin', None)
+    session.pop('admin_id', None)
+    session.pop('username', None)
+    session.pop('permissions', None)
     return redirect(url_for('admin_login'))
 
 @app.route('/admin')
 def admin_panel():
-    if session.get('is_admin') != True:
+    if 'admin_id' not in session:
         return redirect(url_for('admin_login'))
-
+        
+    current_permissions = session.get('permissions', {})
+    
+    # 1. جلب البيانات الرئيسية
     products = Product.query.all()
     orders = Order.query.order_by(Order.date_placed.desc()).all() 
     categories = Category.query.all()
-    # 🆕 جلب جميع التقييمات لعرضها في لوحة المشرف
-    all_reviews = Review.query.order_by(Review.date_posted.desc()).all() 
+    all_reviews = Review.query.order_by(Review.date_posted.desc()).all()
     
+    # 2. حساب الإحصائيات للوحة المعلومات
+    total_sales_result = db.session.query(func.sum(Order.total_price)).filter_by(status='Delivered').scalar()
+    total_sales = round(total_sales_result or 0, 2)
+    new_orders_count = Order.query.filter_by(status='New').count()
+    low_stock_products = Product.query.filter(Product.stock <= LOW_STOCK_THRESHOLD).all() 
+
+    stats = {
+        'total_sales': total_sales,
+        'new_orders_count': new_orders_count,
+        'low_stock_count': len(low_stock_products)
+    }
+    
+    # 3. جلب قائمة المشرفين (إذا كان للمشرف الحالي صلاحية إدارتهم)
+    admin_users = AdminUser.query.all()
+
     return render_template(
         'admin.html', 
         products=products, 
         orders=orders, 
         categories=categories,
-        all_reviews=all_reviews # تمرير قائمة التقييمات
+        all_reviews=all_reviews,
+        stats=stats,
+        low_stock_products=low_stock_products,
+        admin_users=admin_users, 
+        permissions=current_permissions 
     ) 
+
+@app.route('/admin/add', methods=['POST'])
+def add_admin():
+    """مسار إضافة مشرف جديد."""
+    if session.get('permissions', {}).get('admins') != True:
+        flash('ليس لديك صلاحية لإضافة مشرفين.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    username = request.form.get('username')
+    password = request.form.get('password')
+    
+    if AdminUser.query.filter_by(username=username).first():
+        flash('اسم المشرف هذا موجود بالفعل.', 'error')
+        return redirect(url_for('admin_panel'))
+    
+    if not password:
+        flash('يجب توفير كلمة مرور.', 'error')
+        return redirect(url_for('admin_panel'))
+
+    new_admin = AdminUser(username=username)
+    new_admin.set_password(password)
+    
+    # تعيين الصلاحيات الأولية
+    new_admin.can_manage_products = 'products' in request.form
+    new_admin.can_manage_orders = 'orders' in request.form
+    new_admin.can_manage_reviews = 'reviews' in request.form
+    new_admin.can_manage_admins = 'admins' in request.form 
+
+    db.session.add(new_admin)
+    db.session.commit()
+    flash(f'تم إضافة المشرف {username} بنجاح.', 'success')
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/permission/toggle/<int:user_id>/<string:permission_type>', methods=['POST'])
+def toggle_admin_permission(user_id, permission_type):
+    """مسار تحديث صلاحيات المشرفين عبر AJAX."""
+    if session.get('permissions', {}).get('admins') != True:
+        return jsonify({"message": "ليس لديك صلاحية."}), 403
+        
+    admin_to_edit = AdminUser.query.get_or_404(user_id)
+    
+    # حماية ضد تغيير المشرف لصلاحياته الخاصة
+    if admin_to_edit.id == session.get('admin_id'):
+        return jsonify({"message": "لا يمكنك تعديل صلاحياتك الخاصة."}), 400
+
+    # تحديث حقل الصلاحية المعني
+    permission_map = {
+        'products': 'can_manage_products',
+        'orders': 'can_manage_orders',
+        'reviews': 'can_manage_reviews',
+        'admins': 'can_manage_admins'
+    }
+    
+    if permission_type in permission_map:
+        perm_attribute = permission_map[permission_type]
+        current_state = getattr(admin_to_edit, perm_attribute)
+        setattr(admin_to_edit, perm_attribute, not current_state)
+        db.session.commit()
+        
+        new_state = getattr(admin_to_edit, perm_attribute)
+        return jsonify({
+            "message": f"تم تحديث صلاحية {permission_type} للمشرف {admin_to_edit.username}", 
+            "new_state": new_state
+        })
+    else:
+        return jsonify({"message": "نوع صلاحية غير معروف."}), 400
 
 @app.route('/delete_review/<int:review_id>', methods=['POST'])
 def delete_review(review_id):
     """مسار حذف التقييمات من لوحة المشرف."""
-    if session.get('is_admin') != True: 
-        return redirect(url_for('admin_login'))
+    if session.get('permissions', {}).get('reviews') != True: 
+        flash('ليس لديك صلاحية لإدارة التقييمات.', 'error')
+        return redirect(url_for('admin_panel'))
         
     review = Review.query.get_or_404(review_id)
     db.session.delete(review)
@@ -381,9 +502,28 @@ def delete_review(review_id):
     flash('تم حذف التقييم بنجاح.', 'success')
     return redirect(url_for('admin_panel'))
 
+@app.route('/reset_product_reviews/<int:product_id>', methods=['POST'])
+def reset_product_reviews(product_id):
+    """مسار إعادة تعيين جميع التقييمات لمنتج محدد."""
+    if session.get('permissions', {}).get('reviews') != True: 
+        flash('ليس لديك صلاحية لإدارة التقييمات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
+    product = Product.query.get_or_404(product_id)
+    
+    Review.query.filter_by(product_id=product_id).delete()
+    db.session.commit()
+    
+    flash(f'تمت إعادة تعيين جميع تقييمات المنتج {product.name} بنجاح.', 'warning')
+    return redirect(url_for('admin_panel'))
+
+
 @app.route('/add_product', methods=['POST'])
 def add_product():
-    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    """مسار إضافة منتج جديد."""
+    if session.get('permissions', {}).get('products') != True: 
+        flash('ليس لديك صلاحية لإدارة المنتجات.', 'error')
+        return redirect(url_for('admin_panel'))
     
     name = request.form.get('name')
     price = request.form.get('price')
@@ -391,16 +531,15 @@ def add_product():
     stock = request.form.get('stock')
     category_id = request.form.get('category_id')
 
-    # معالجة ملف الصورة
     image_file = request.files.get('image_file') 
     image_url = '/static/placeholder.png' 
     
     if image_file and image_file.filename != '':
         image_url = handle_image_upload(image_file)
 
-
     if not all([name, price, stock, category_id]):
-        return redirect(url_for('admin_panel', message='خطأ: يجب توفير جميع الحقول المطلوبة للمنتج!'))
+        flash('خطأ: يجب توفير جميع الحقول المطلوبة للمنتج!', 'error')
+        return redirect(url_for('admin_panel'))
     
     try:
         new_product = Product(
@@ -413,20 +552,25 @@ def add_product():
         )
         db.session.add(new_product)
         db.session.commit()
-        return redirect(url_for('admin_panel', message=f'تمت إضافة المنتج {name} بنجاح!'))
+        flash(f'تمت إضافة المنتج {name} بنجاح!', 'success')
+        return redirect(url_for('admin_panel'))
     except ValueError:
-        return redirect(url_for('admin_panel', message='خطأ: يجب أن يكون السعر ورصيد المخزون أرقاماً صحيحة!'))
+        flash('خطأ: يجب أن يكون السعر ورصيد المخزون أرقاماً صحيحة!', 'error')
+        return redirect(url_for('admin_panel'))
 
 
 @app.route('/edit_product/<int:product_id>', methods=['GET', 'POST'])
 def edit_product(product_id):
-    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    """مسار تعديل منتج موجود."""
+    if session.get('permissions', {}).get('products') != True: 
+        flash('ليس لديك صلاحية لإدارة المنتجات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
     product = Product.query.get_or_404(product_id)
     categories = Category.query.all()
 
     if request.method == 'POST':
         try:
-            # معالجة رفع الملفات عند التعديل
             image_file = request.files.get('image_file')
             image_url = product.image_url 
 
@@ -441,78 +585,121 @@ def edit_product(product_id):
             product.category_id = int(request.form.get('category_id'))
             
             db.session.commit()
-            return redirect(url_for('admin_panel', message=f'تم تعديل المنتج {product.name} بنجاح!'))
+            flash(f'تم تعديل المنتج {product.name} بنجاح!', 'success')
+            return redirect(url_for('admin_panel'))
         except:
             db.session.rollback()
-            return redirect(url_for('admin_panel', message='خطأ أثناء التعديل!'))
+            flash('خطأ أثناء التعديل!', 'error')
+            return redirect(url_for('admin_panel'))
 
     return render_template('edit_product.html', product=product, categories=categories)
 
 
 @app.route('/delete_product/<int:product_id>', methods=['POST'])
 def delete_product(product_id):
-    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    """مسار حذف منتج."""
+    if session.get('permissions', {}).get('products') != True: 
+        flash('ليس لديك صلاحية لإدارة المنتجات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
     product = Product.query.get_or_404(product_id)
     product_name = product.name
     
     db.session.delete(product)
     db.session.commit()
     
-    return redirect(url_for('admin_panel', message=f'تم حذف المنتج {product_name} بنجاح.'))
+    flash(f'تم حذف المنتج {product_name} بنجاح.', 'success')
+    return redirect(url_for('admin_panel'))
 
 @app.route('/update_order_status/<int:order_id>', methods=['POST'])
 def update_order_status(order_id):
-    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    """مسار تحديث حالة الطلب."""
+    if session.get('permissions', {}).get('orders') != True: 
+        flash('ليس لديك صلاحية لإدارة الطلبات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
     order = Order.query.get_or_404(order_id)
     new_status = request.form.get('status')
     
     if new_status in ['New', 'Processing', 'Shipped', 'Delivered']:
         order.status = new_status
         db.session.commit()
-        return redirect(url_for('admin_panel', message=f'تم تحديث حالة الطلب #{order_id} إلى {new_status}.'))
+        flash(f'تم تحديث حالة الطلب #{order_id} إلى {new_status}.', 'success')
+        return redirect(url_for('admin_panel'))
         
-    return "حالة طلب غير صالحة", 400
+    flash("حالة طلب غير صالحة", 'error')
+    return redirect(url_for('admin_panel'))
 
 @app.route('/order_details/<int:order_id>')
 def order_details(order_id):
-    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    """عرض تفاصيل الطلب."""
+    if session.get('permissions', {}).get('orders') != True: 
+        flash('ليس لديك صلاحية لعرض الطلبات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
     order = Order.query.get_or_404(order_id)
     return render_template('order_details.html', order=order)
 
 @app.route('/add_category', methods=['POST'])
 def add_category():
-    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    """مسار إضافة فئة جديدة."""
+    if session.get('permissions', {}).get('products') != True: 
+        flash('ليس لديك صلاحية لإدارة الفئات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
     name = request.form.get('name')
     if name:
         new_category = Category(name=name)
         db.session.add(new_category)
         db.session.commit()
-        return redirect(url_for('admin_panel', message=f'تمت إضافة الفئة {name} بنجاح.'))
-    return redirect(url_for('admin_panel', message='خطأ: يجب توفير اسم للفئة.'))
+        flash(f'تمت إضافة الفئة {name} بنجاح.', 'success')
+        return redirect(url_for('admin_panel'))
+    flash('خطأ: يجب توفير اسم للفئة.', 'error')
+    return redirect(url_for('admin_panel'))
 
 @app.route('/delete_category/<int:category_id>', methods=['POST'])
 def delete_category(category_id):
-    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    """مسار حذف فئة."""
+    if session.get('permissions', {}).get('products') != True: 
+        flash('ليس لديك صلاحية لإدارة الفئات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
     category = Category.query.get_or_404(category_id)
     
     if category.products:
-        return redirect(url_for('admin_panel', message=f'لا يمكن حذف الفئة {category.name}. يجب نقل أو حذف المنتجات المرتبطة أولاً.'))
+        flash(f'لا يمكن حذف الفئة {category.name}. يجب نقل أو حذف المنتجات المرتبطة أولاً.', 'error')
+        return redirect(url_for('admin_panel'))
     
     db.session.delete(category)
     db.session.commit()
-    return redirect(url_for('admin_panel', message=f'تم حذف الفئة {category.name} بنجاح.'))
+    flash(f'تم حذف الفئة {category.name} بنجاح.', 'success')
+    return redirect(url_for('admin_panel'))
 
 
 # --- التشغيل والإعداد الأولي ---
 
 if __name__ == '__main__':
     with app.app_context():
-        # التأكد من وجود مجلد الرفع عند بدء التشغيل
+        # التأكد من مجلد الرفع
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
             
         db.create_all() 
-        
+
+        # الإعداد الأولي: إضافة المشرف الرئيسي
+        if AdminUser.query.count() == 0:
+            initial_admin = AdminUser(
+                username=ADMIN_USERNAME_DEFAULT,
+                can_manage_products=True,
+                can_manage_orders=True,
+                can_manage_reviews=True,
+                can_manage_admins=True # المشرف الأول لديه كل الصلاحيات
+            )
+            initial_admin.set_password(ADMIN_PASSWORD_DEFAULT)
+            db.session.add(initial_admin)
+            db.session.commit()
+            print(f"تم إنشاء المشرف الرئيسي: {ADMIN_USERNAME_DEFAULT} (كلمة المرور: {ADMIN_PASSWORD_DEFAULT})")
+            
         # إضافة بيانات تجريبية (فئات)
         if Category.query.count() == 0:
             tech = Category(name="Electronics")

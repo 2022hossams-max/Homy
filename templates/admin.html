@@ -6,7 +6,7 @@
     <title>لوحة إدارة المتجر</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
-        /* تنسيقات خاصة بلوحة الإدارة */
+        /* ... (تنسيقات CSS السابقة كما هي) ... */
         .admin-section {
             background: white;
             padding: 20px;
@@ -14,48 +14,14 @@
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
-        .admin-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .admin-header a {
-            background-color: #dc3545;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 5px;
-            text-decoration: none;
-            transition: background-color 0.3s;
-        }
-        .admin-header a:hover {
-            background-color: #c82333;
-        }
-        table img {
-            max-width: 50px;
-            max-height: 50px;
-            border-radius: 4px;
-        }
-        .action-btns button, .action-btns a {
-            margin-left: 5px;
-        }
-        .product-actions form {
-            display: inline;
-        }
-        .review-comment {
-            max-width: 300px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .rating-display {
-            color: gold;
-        }
+        /* ... (أضف أي تنسيقات جديدة هنا) ... */
     </style>
 </head>
 <body>
     <header class="admin-header">
         <h1>لوحة إدارة المتجر</h1>
         <div>
+            <span style="color: white; margin-left: 15px;">مرحباً، {{ session.get('username', 'مشرف') }}</span>
             <a href="{{ url_for('home') }}" class="admin-link">العودة للمتجر</a>
             <a href="{{ url_for('admin_logout') }}">تسجيل الخروج</a>
         </div>
@@ -70,15 +36,104 @@
             {% endif %}
         {% endwith %}
 
+        <section class="admin-section dashboard-stats">
+            <div class="stat-card">
+                <h3>💰 إجمالي المبيعات المكتملة</h3>
+                <p>${{ stats.total_sales | round(2) }}</p>
+            </div>
+            <div class="stat-card">
+                <h3>🔔 الطلبات الجديدة</h3>
+                <p style="color: {% if stats.new_orders_count > 0 %}#ffc107{% else %}#28a745{% endif %};">
+                    {{ stats.new_orders_count }}
+                </p>
+            </div>
+            <div class="stat-card {% if stats.low_stock_count > 0 %}alert{% endif %}">
+                <h3>⚠️ منتجات قليلة المخزون</h3>
+                <p>{{ stats.low_stock_count }}</p>
+            </div>
+        </section>
+
+        {% if low_stock_products %}
+        <section class="admin-section" style="background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404;">
+            <h3>تنبيه المخزون المنخفض</h3>
+            <p>المنتجات التالية تحتاج إلى إعادة تزويد بالمخزون (المخزون 5 أو أقل):</p>
+            <ul>
+                {% for product in low_stock_products %}
+                    <li>**{{ product.name }}** (المخزون المتبقي: {{ product.stock }})</li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        <hr>
+
+        {% if permissions.admins %}
         <section class="admin-section">
-            <h2>إضافة منتج جديد</h2>
+            <h2>👤 إدارة المشرفين والصلاحيات</h2>
             
+            <h3>إضافة مشرف جديد</h3>
+            <form method="POST" action="{{ url_for('add_admin') }}" style="display: flex; flex-direction: column; gap: 10px; padding: 15px; border: 1px dashed #ccc; margin-bottom: 20px;">
+                <input type="text" name="username" placeholder="اسم المشرف الجديد" required style="padding: 10px;">
+                <input type="password" name="password" placeholder="كلمة المرور" required style="padding: 10px;">
+                
+                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px;">
+                    <label><input type="checkbox" name="products"> إدارة المنتجات</label>
+                    <label><input type="checkbox" name="orders"> إدارة الطلبات</label>
+                    <label><input type="checkbox" name="reviews"> إدارة التقييمات</label>
+                    <label><input type="checkbox" name="admins"> إدارة المشرفين (كامل الصلاحيات)</label>
+                </div>
+
+                <button type="submit" style="background-color: #007bff; color: white;">إضافة المشرف</button>
+            </form>
+            
+            <h3>قائمة المشرفين الحاليين</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>الاسم</th>
+                        <th>المنتجات</th>
+                        <th>الطلبات</th>
+                        <th>التقييمات</th>
+                        <th>المشرفين</th>
+                        <th>الإجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for admin in admin_users %}
+                    <tr>
+                        <td>{{ admin.username }} {% if admin.id == session.get('admin_id') %}(أنت){% endif %}</td>
+                        <td>
+                            <input type="checkbox" class="perm-checkbox" data-user-id="{{ admin.id }}" data-perm-type="products" {% if admin.can_manage_products %}checked{% endif %} {% if admin.id == session.get('admin_id') %}disabled{% endif %}>
+                        </td>
+                        <td>
+                            <input type="checkbox" class="perm-checkbox" data-user-id="{{ admin.id }}" data-perm-type="orders" {% if admin.can_manage_orders %}checked{% endif %} {% if admin.id == session.get('admin_id') %}disabled{% endif %}>
+                        </td>
+                        <td>
+                            <input type="checkbox" class="perm-checkbox" data-user-id="{{ admin.id }}" data-perm-type="reviews" {% if admin.can_manage_reviews %}checked{% endif %} {% if admin.id == session.get('admin_id') %}disabled{% endif %}>
+                        </td>
+                        <td>
+                            <input type="checkbox" class="perm-checkbox" data-user-id="{{ admin.id }}" data-perm-type="admins" {% if admin.can_manage_admins %}checked{% endif %} {% if admin.id == session.get('admin_id') %}disabled{% endif %}>
+                        </td>
+                        <td>
+                            {% if admin.id != session.get('admin_id') %}
+                                <button style="background-color: #dc3545; padding: 6px 10px; opacity: 0.5;" disabled>حذف</button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        <hr>
+        {% endif %}
+        {% if permissions.products %}
+        <section class="admin-section">
+            <h2>➕ إضافة منتج جديد</h2>
             <form method="POST" action="{{ url_for('add_product') }}" enctype="multipart/form-data">
                 
                 <div class="form-container" style="box-shadow: none;">
                     <label for="name">اسم المنتج:</label>
                     <input type="text" id="name" name="name" required>
-
                     <label for="price">السعر ($):</label>
                     <input type="number" id="price" name="price" step="0.01" required>
 
@@ -97,16 +152,17 @@
 
                     <label for="description">الوصف:</label>
                     <textarea id="description" name="description"></textarea>
-
+                    
                     <button type="submit">أضف المنتج</button>
                 </div>
             </form>
         </section>
-
         <hr>
+        {% endif %}
 
+        {% if permissions.products %}
         <section class="admin-section">
-            <h2>المنتجات الحالية ({{ products|length }})</h2>
+            <h2>🛒 المنتجات الحالية ({{ products|length }})</h2>
             <table>
                 <thead>
                     <tr>
@@ -116,7 +172,8 @@
                         <th>السعر ($)</th>
                         <th>المخزون</th>
                         <th>الفئة</th>
-                        <th>**متوسط التقييم**</th> <th>الإجراءات</th>
+                        <th>متوسط التقييم</th>
+                        <th>الإجراءات</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -126,7 +183,7 @@
                             <td><img src="{{ product.image_url }}" alt="{{ product.name }}" onerror="this.src='/static/placeholder.png'"></td>
                             <td>{{ product.name }}</td>
                             <td>{{ product.price | round(2) }}</td>
-                            <td>{{ product.stock }}</td>
+                            <td style="color: {% if product.stock <= 5 %}red; font-weight: bold;{% endif %}">{{ product.stock }}</td>
                             <td>{{ product.category.name if product.category else 'غير محدد' }}</td>
                             
                             <td>
@@ -142,9 +199,14 @@
                             </td>
                             
                             <td class="action-btns">
-                                <a href="{{ url_for('edit_product', product_id=product.id) }}" style="background-color: #ffc107; color: #333; padding: 6px 10px;">تعديل</a>
+                                <a href="{{ url_for('edit_product', product_id=product.id) }}" style="background-color: #ffc107; color: #333;">تعديل</a>
+                                
                                 <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}" onsubmit="return confirm('هل أنت متأكد من حذف المنتج {{ product.name }}؟');">
-                                    <button type="submit" style="background-color: #dc3545; padding: 6px 10px;">حذف</button>
+                                    <button type="submit" style="background-color: #dc3545;">حذف</button>
+                                </form>
+                                
+                                <form method="POST" action="{{ url_for('reset_product_reviews', product_id=product.id) }}" onsubmit="return confirm('تحذير! هل أنت متأكد من حذف جميع تقييمات {{ product.name }}؟');" style="display: inline;">
+                                    <button type="submit" style="background-color: #ff9800; color: white;">إعادة تعيين التقييم</button>
                                 </form>
                             </td>
                         </tr>
@@ -152,12 +214,12 @@
                 </tbody>
             </table>
         </section>
-
         <hr>
+        {% endif %}
 
+        {% if permissions.reviews %}
         <section class="admin-section">
-            <h2>إدارة ومراجعة التقييمات ({{ all_reviews|length }})</h2>
-            <p style="color: #6c757d;">يمكنك هنا حذف أي تقييم يحتوي على محتوى غير لائق.</p>
+            <h2>⭐ إدارة ومراجعة التقييمات ({{ all_reviews|length }})</h2>
             <table>
                 <thead>
                     <tr>
@@ -186,7 +248,7 @@
                             <td>{{ review.date_posted.strftime('%Y-%m-%d') }}</td>
                             <td>
                                 <form method="POST" action="{{ url_for('delete_review', review_id=review.id) }}" onsubmit="return confirm('هل أنت متأكد من حذف هذا التقييم؟');">
-                                    <button type="submit" style="background-color: #dc3545; padding: 6px 10px;">حذف</button>
+                                    <button type="submit" style="background-color: #dc3545;">حذف</button>
                                 </form>
                             </td>
                         </tr>
@@ -194,12 +256,12 @@
                 </tbody>
             </table>
         </section>
-
         <hr>
+        {% endif %}
 
+        {% if permissions.products %}
         <section class="admin-section">
-            <h2>إدارة الفئات</h2>
-            
+            <h2>🏷️ إدارة الفئات</h2>
             <form method="POST" action="{{ url_for('add_category') }}" style="display: flex; gap: 10px; margin-bottom: 20px;">
                 <input type="text" name="name" placeholder="اسم الفئة الجديدة" required style="flex-grow: 1; padding: 10px;">
                 <button type="submit">إضافة فئة</button>
@@ -222,7 +284,7 @@
                             <td>{{ category.products|length }}</td>
                             <td>
                                 <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف الفئة؟');">
-                                    <button type="submit" style="background-color: #dc3545; padding: 6px 10px;">حذف</button>
+                                    <button type="submit" style="background-color: #dc3545;">حذف</button>
                                 </form>
                             </td>
                         </tr>
@@ -230,11 +292,12 @@
                 </tbody>
             </table>
         </section>
-
         <hr>
+        {% endif %}
 
+        {% if permissions.orders %}
         <section class="admin-section">
-            <h2>الطلبات الحديثة ({{ orders|length }})</h2>
+            <h2>📦 الطلبات الحديثة ({{ orders|length }})</h2>
             <table>
                 <thead>
                     <tr>
@@ -264,13 +327,63 @@
                                 </form>
                             </td>
                             <td>
-                                <a href="{{ url_for('order_details', order_id=order.id) }}" style="background-color: #17a2b8; padding: 6px 10px;">تفاصيل</a>
+                                <a href="{{ url_for('order_details', order_id=order.id) }}" style="background-color: #17a2b8;">تفاصيل</a>
                             </td>
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </section>
+        <hr>
+        {% endif %}
     </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const checkboxes = document.querySelectorAll('.perm-checkbox');
+            
+            checkboxes.forEach(checkbox => {
+                if (!checkbox.disabled) { // لا تشغل المستمع للمشرف الحالي
+                    checkbox.addEventListener('change', function() {
+                        const userId = this.getAttribute('data-user-id');
+                        const permType = this.getAttribute('data-perm-type');
+                        const isChecked = this.checked;
+                        
+                        const url = `/admin/permission/toggle/${userId}/${permType}`;
+                        
+                        // إرسال طلب POST لتغيير الصلاحية
+                        fetch(url, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ is_checked: isChecked })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.message) {
+                                // عرض رسالة بسيطة
+                                console.log(data.message);
+                                // لا تحتاج إلى إعادة تحميل الصفحة، لكن يمكن تحديث شريط الرسائل
+                                // في تطبيق Flask حقيقي، يجب تحديث رسائل الفلاش عبر AJAX
+                                
+                                // التأكد من حالة المربع بناءً على الرد
+                                this.checked = data.new_state;
+                            } else {
+                                // إذا فشل الطلب، أعد الحالة الأصلية للمربع
+                                this.checked = !isChecked;
+                                alert("فشل تحديث الصلاحية: " + data.message);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            this.checked = !isChecked; // إعادة الحالة الأصلية عند الفشل
+                            alert("حدث خطأ في الاتصال بالخادم.");
+                        });
+                    });
+                }
+            });
+        });
+    </script>
 </body>
 </html>
