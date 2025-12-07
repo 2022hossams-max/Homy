@@ -22,16 +22,22 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 db = SQLAlchemy(app)
 
-# --- وظائف مساعدة لرفع الملفات (كما هي) ---
+# --- وظائف مساعدة لرفع الملفات ---
+
 def allowed_file(filename):
+    """التحقق من أن الامتداد مسموح به."""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def handle_image_upload(file):
+    """
+    يتلقى ملف الصورة، يحفظه في مجلد UPLOAD_FOLDER ويعيد المسار النسبي له.
+    """
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
+        # التأكد من وجود مجلد الرفع قبل الحفظ
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
             
@@ -51,7 +57,7 @@ class Category(db.Model):
 class Review(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    rating = db.Column(db.Integer, nullable=False)
+    rating = db.Column(db.Integer, nullable=False) # من 1 إلى 5
     comment = db.Column(db.Text, nullable=True)
     reviewer_name = db.Column(db.String(100), default='Anonymous')
     date_posted = db.Column(db.DateTime, default=datetime.utcnow)
@@ -76,6 +82,7 @@ class Product(db.Model):
     reviews = db.relationship('Review', backref='product', lazy='dynamic') 
 
     def get_rating_info(self):
+        """حساب متوسط التقييم وعدد التقييمات"""
         avg_rating = db.session.query(func.avg(Review.rating)).filter(Review.product_id == self.id).scalar()
         review_count = self.reviews.count()
         
@@ -113,9 +120,10 @@ class OrderItem(db.Model):
     price = db.Column(db.Float, nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
 
-# --- وظائف مساعدة للسلة والمفضلة (كما هي) ---
+# --- وظائف مساعدة للسلة والمفضلة ---
 
 def get_cart_details():
+    """يحصل على تفاصيل سلة المشتريات من الجلسة."""
     if 'cart' not in session:
         session['cart'] = {}
     
@@ -138,6 +146,7 @@ def get_cart_details():
     return cart_items, total_price
 
 def get_favorites_details():
+    """يحصل على تفاصيل المنتجات المفضلة من الجلسة."""
     favorites_ids = [int(id) for id in session.get('favorites', [])]
     favorite_products = Product.query.filter(Product.id.in_(favorites_ids)).all()
     
@@ -207,7 +216,7 @@ def get_products():
 # --- مسارات المفضلة (Wishlist Routes) ---
 
 @app.route('/favorites')
-def favorites_view(): # 📌 تم التأكد من وجود هذه الدالة
+def favorites_view():
     favorite_products = get_favorites_details()
     return render_template('favorites.html', products=favorite_products)
 
@@ -239,7 +248,7 @@ def toggle_favorite(product_id):
         "is_added": is_added
     })
     
-# --- مسارات السلة (Cart, Checkout) (كما هي) ---
+# --- مسارات السلة (Cart Routes) ---
 
 @app.route('/cart/add/<int:product_id>')
 def add_to_cart(product_id):
@@ -295,6 +304,7 @@ def checkout():
         db.session.commit()
         
         for item in cart_items:
+            # تحديث المخزون (خصم الكمية)
             product = Product.query.get(item['product_id'])
             if product and product.stock >= item['quantity']:
                 product.stock -= item['quantity']
@@ -320,7 +330,7 @@ def checkout():
 def order_success(order_id):
     return render_template('order_success.html', order_id=order_id)
 
-# --- مسارات الإدارة والمصادقة (Admin & Auth Routes) (كما هي) ---
+# --- مسارات الإدارة والمصادقة (Admin & Auth Routes) ---
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login(): 
@@ -348,11 +358,28 @@ def admin_panel():
     products = Product.query.all()
     orders = Order.query.order_by(Order.date_placed.desc()).all() 
     categories = Category.query.all()
-    success_message = request.args.get('message')
+    # 🆕 جلب جميع التقييمات لعرضها في لوحة المشرف
+    all_reviews = Review.query.order_by(Review.date_posted.desc()).all() 
     
-    return render_template('admin.html', products=products, orders=orders, categories=categories, success_message=success_message) 
+    return render_template(
+        'admin.html', 
+        products=products, 
+        orders=orders, 
+        categories=categories,
+        all_reviews=all_reviews # تمرير قائمة التقييمات
+    ) 
 
-# ... (بقية مسارات الإدارة: add_product, edit_product, delete_product, update_order_status, order_details, add_category, delete_category) ...
+@app.route('/delete_review/<int:review_id>', methods=['POST'])
+def delete_review(review_id):
+    """مسار حذف التقييمات من لوحة المشرف."""
+    if session.get('is_admin') != True: 
+        return redirect(url_for('admin_login'))
+        
+    review = Review.query.get_or_404(review_id)
+    db.session.delete(review)
+    db.session.commit()
+    flash('تم حذف التقييم بنجاح.', 'success')
+    return redirect(url_for('admin_panel'))
 
 @app.route('/add_product', methods=['POST'])
 def add_product():
@@ -364,6 +391,7 @@ def add_product():
     stock = request.form.get('stock')
     category_id = request.form.get('category_id')
 
+    # معالجة ملف الصورة
     image_file = request.files.get('image_file') 
     image_url = '/static/placeholder.png' 
     
@@ -398,6 +426,7 @@ def edit_product(product_id):
 
     if request.method == 'POST':
         try:
+            # معالجة رفع الملفات عند التعديل
             image_file = request.files.get('image_file')
             image_url = product.image_url 
 
@@ -478,6 +507,7 @@ def delete_category(category_id):
 
 if __name__ == '__main__':
     with app.app_context():
+        # التأكد من وجود مجلد الرفع عند بدء التشغيل
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
             

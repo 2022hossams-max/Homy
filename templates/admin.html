@@ -41,6 +41,15 @@
         .product-actions form {
             display: inline;
         }
+        .review-comment {
+            max-width: 300px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .rating-display {
+            color: gold;
+        }
     </style>
 </head>
 <body>
@@ -53,14 +62,10 @@
     </header>
 
     <main>
-        {% if success_message %}
-            <div class="message-success">{{ success_message }}</div>
-        {% endif %}
-
-        {% with messages = get_flashed_messages() %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                {% for message in messages %}
-                    <div class="message-success">{{ message }}</div>
+                {% for category, message in messages %}
+                    <div class="message-{{ category }}">{{ message }}</div>
                 {% endfor %}
             {% endif %}
         {% endwith %}
@@ -98,6 +103,100 @@
             </form>
         </section>
 
+        <hr>
+
+        <section class="admin-section">
+            <h2>المنتجات الحالية ({{ products|length }})</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>الصورة</th>
+                        <th>الاسم</th>
+                        <th>السعر ($)</th>
+                        <th>المخزون</th>
+                        <th>الفئة</th>
+                        <th>**متوسط التقييم**</th> <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in products %}
+                        <tr>
+                            <td>{{ product.id }}</td>
+                            <td><img src="{{ product.image_url }}" alt="{{ product.name }}" onerror="this.src='/static/placeholder.png'"></td>
+                            <td>{{ product.name }}</td>
+                            <td>{{ product.price | round(2) }}</td>
+                            <td>{{ product.stock }}</td>
+                            <td>{{ product.category.name if product.category else 'غير محدد' }}</td>
+                            
+                            <td>
+                                {% set rating_info = product.get_rating_info() %}
+                                {% if rating_info.count > 0 %}
+                                    <span class="rating-display">
+                                        {{ rating_info.average | round(2) }} ⭐
+                                    </span>
+                                    ({{ rating_info.count }})
+                                {% else %}
+                                    لا يوجد تقييم
+                                {% endif %}
+                            </td>
+                            
+                            <td class="action-btns">
+                                <a href="{{ url_for('edit_product', product_id=product.id) }}" style="background-color: #ffc107; color: #333; padding: 6px 10px;">تعديل</a>
+                                <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}" onsubmit="return confirm('هل أنت متأكد من حذف المنتج {{ product.name }}؟');">
+                                    <button type="submit" style="background-color: #dc3545; padding: 6px 10px;">حذف</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <hr>
+
+        <section class="admin-section">
+            <h2>إدارة ومراجعة التقييمات ({{ all_reviews|length }})</h2>
+            <p style="color: #6c757d;">يمكنك هنا حذف أي تقييم يحتوي على محتوى غير لائق.</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>المنتج</th>
+                        <th>التقييم</th>
+                        <th>المراجع</th>
+                        <th>التعليق</th>
+                        <th>التاريخ</th>
+                        <th>الإجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for review in all_reviews %}
+                        <tr>
+                            <td>{{ review.id }}</td>
+                            <td><a href="{{ url_for('product_detail', product_id=review.product_id) }}" target="_blank">{{ review.product.name }}</a></td>
+                            <td>
+                                <span class="rating-display">
+                                    {% for i in range(review.rating) %}★{% endfor %}
+                                </span>
+                                ({{ review.rating }}/5)
+                            </td>
+                            <td>{{ review.reviewer_name }}</td>
+                            <td class="review-comment">{{ review.comment or '---' }}</td>
+                            <td>{{ review.date_posted.strftime('%Y-%m-%d') }}</td>
+                            <td>
+                                <form method="POST" action="{{ url_for('delete_review', review_id=review.id) }}" onsubmit="return confirm('هل أنت متأكد من حذف هذا التقييم؟');">
+                                    <button type="submit" style="background-color: #dc3545; padding: 6px 10px;">حذف</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <hr>
+
         <section class="admin-section">
             <h2>إدارة الفئات</h2>
             
@@ -122,7 +221,7 @@
                             <td>{{ category.name }}</td>
                             <td>{{ category.products|length }}</td>
                             <td>
-                                <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف الفئة (سيتم منع الحذف إذا كانت تحتوي على منتجات)؟');">
+                                <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف الفئة؟');">
                                     <button type="submit" style="background-color: #dc3545; padding: 6px 10px;">حذف</button>
                                 </form>
                             </td>
@@ -132,41 +231,7 @@
             </table>
         </section>
 
-
-        <section class="admin-section">
-            <h2>المنتجات الحالية ({{ products|length }})</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>الصورة</th>
-                        <th>الاسم</th>
-                        <th>السعر ($)</th>
-                        <th>المخزون</th>
-                        <th>الفئة</th>
-                        <th>الإجراءات</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for product in products %}
-                        <tr>
-                            <td>{{ product.id }}</td>
-                            <td><img src="{{ product.image_url }}" alt="{{ product.name }}" onerror="this.src='/static/placeholder.png'"></td>
-                            <td>{{ product.name }}</td>
-                            <td>{{ product.price | round(2) }}</td>
-                            <td>{{ product.stock }}</td>
-                            <td>{{ product.category.name if product.category else 'غير محدد' }}</td>
-                            <td class="action-btns">
-                                <a href="{{ url_for('edit_product', product_id=product.id) }}" style="background-color: #ffc107; color: #333; padding: 6px 10px;">تعديل</a>
-                                <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}" onsubmit="return confirm('هل أنت متأكد من حذف المنتج {{ product.name }}؟');">
-                                    <button type="submit" style="background-color: #dc3545; padding: 6px 10px;">حذف</button>
-                                </form>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </section>
+        <hr>
 
         <section class="admin-section">
             <h2>الطلبات الحديثة ({{ orders|length }})</h2>
