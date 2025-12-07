@@ -2,19 +2,50 @@ from flask import Flask, jsonify, render_template, request, session, redirect, u
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from sqlalchemy import or_
+import os 
+from werkzeug.utils import secure_filename 
 
 # --- إعدادات التطبيق ---
-# يمكن تغيير هذه المتغيرات
 ADMIN_USERNAME = 'hossam_admin'
 ADMIN_PASSWORD = 'strong_password123' 
 # ------------------------
+
+# إعدادات رفع الملفات
+UPLOAD_FOLDER = 'static/product_images' 
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'} 
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_super_secret_key_12345' 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 db = SQLAlchemy(app)
+
+# --- وظائف مساعدة لرفع الملفات ---
+
+def allowed_file(filename):
+    """التحقق من أن الامتداد مسموح به."""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def handle_image_upload(file):
+    """
+    يتلقى ملف الصورة، يحفظه في مجلد UPLOAD_FOLDER ويعيد المسار النسبي له.
+    """
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        # التأكد من وجود مجلد الرفع قبل الحفظ
+        if not os.path.exists(app.config['UPLOAD_FOLDER']):
+            os.makedirs(app.config['UPLOAD_FOLDER'])
+            
+        file.save(filepath)
+        
+        return '/' + filepath.replace('\\', '/') 
+    
+    return '/static/placeholder.png' 
 
 # --- نماذج قاعدة البيانات (Models) ---
 
@@ -86,10 +117,7 @@ def get_cart_details():
 
 def get_favorites_details():
     """يحصل على تفاصيل المنتجات المفضلة من الجلسة."""
-    # المفضلة يتم تخزينها كقائمة من IDs المنتجات
     favorites_ids = [int(id) for id in session.get('favorites', [])]
-    
-    # جلب تفاصيل المنتجات من قاعدة البيانات
     favorite_products = Product.query.filter(Product.id.in_(favorites_ids)).all()
     
     return [p.to_dict() for p in favorite_products]
@@ -99,8 +127,8 @@ def get_favorites_details():
 @app.route('/')
 def home():
     categories = Category.query.all()
-    # يتم تمرير حالة المفضلة لعرض العدد الصحيح في الرأس
     favorites_count = len(session.get('favorites', []))
+    # 🚨 تم التأكد من عدم وجود أي خطأ هنا، الخطأ كان في index.html
     return render_template('index.html', categories=categories, favorites_count=favorites_count) 
 
 @app.route('/product/<int:product_id>')
@@ -110,10 +138,8 @@ def product_detail(product_id):
 
 # --- مسارات API (لجلب البيانات بواسطة JavaScript) ---
 
-# 🆕 المسار المحدث الذي يحل مشكلة 404
 @app.route('/api/products')
 def get_products():
-    # هنا تم تغيير 'query' ليتطابق مع ما تم إرساله من app.js
     query = request.args.get('query') 
     category_id = request.args.get('category_id')
     
@@ -143,7 +169,6 @@ def toggle_favorite(product_id):
     if 'favorites' not in session:
         session['favorites'] = []
     
-    # نحول IDs إلى int للتأكد من التناسق في قائمة الجلسة
     favorites_list = [int(id) for id in session['favorites']]
     
     product = Product.query.get(product_id)
@@ -151,12 +176,10 @@ def toggle_favorite(product_id):
         return jsonify({"message": "المنتج غير موجود"}), 404
 
     if product_id in favorites_list:
-        # إزالة
         session['favorites'].remove(product_id)
         message = f"تم إزالة {product.name} من المفضلة."
         is_added = False
     else:
-        # إضافة
         session['favorites'].append(product_id)
         message = f"تم إضافة {product.name} إلى المفضلة."
         is_added = True
@@ -180,7 +203,6 @@ def add_to_cart(product_id):
     cart = session.get('cart', {})
     product_id_str = str(product_id)
     
-    # التحقق من المخزون قبل الإضافة
     current_quantity = cart.get(product_id_str, 0)
     if current_quantity >= product.stock:
         return jsonify({"message": f"لا يمكن إضافة المزيد، الحد الأقصى للمخزون هو {product.stock}"}), 400
@@ -254,8 +276,9 @@ def order_success(order_id):
 
 # --- مسارات الإدارة والمصادقة (Admin & Auth Routes) ---
 
+# 📌 دالة تسجيل الدخول (Admin Login)
 @app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
+def admin_login(): 
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -274,7 +297,6 @@ def admin_logout():
 
 @app.route('/admin')
 def admin_panel():
-    # التحقق من المصادقة: إذا لم يكن مشرفاً، قم بإعادة التوجيه لصفحة تسجيل الدخول
     if session.get('is_admin') != True:
         return redirect(url_for('admin_login'))
 
@@ -285,17 +307,23 @@ def admin_panel():
     
     return render_template('admin.html', products=products, orders=orders, categories=categories, success_message=success_message) 
 
-# جميع مسارات الإدارة يجب أن تحتوي على فحص المصادقة
-
 @app.route('/add_product', methods=['POST'])
 def add_product():
     if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    
     name = request.form.get('name')
     price = request.form.get('price')
     description = request.form.get('description')
     stock = request.form.get('stock')
-    image_url = request.form.get('image_url') or '/static/placeholder.png'
     category_id = request.form.get('category_id')
+
+    # معالجة ملف الصورة
+    image_file = request.files.get('image_file') 
+    image_url = '/static/placeholder.png' 
+    
+    if image_file and image_file.filename != '':
+        image_url = handle_image_upload(image_file)
+
 
     if not all([name, price, stock, category_id]):
         return redirect(url_for('admin_panel', message='خطأ: يجب توفير جميع الحقول المطلوبة للمنتج!'))
@@ -306,7 +334,7 @@ def add_product():
             price=float(price),
             description=description,
             stock=int(stock),
-            image_url=image_url,
+            image_url=image_url, 
             category_id=int(category_id)
         )
         db.session.add(new_product)
@@ -314,6 +342,7 @@ def add_product():
         return redirect(url_for('admin_panel', message=f'تمت إضافة المنتج {name} بنجاح!'))
     except ValueError:
         return redirect(url_for('admin_panel', message='خطأ: يجب أن يكون السعر ورصيد المخزون أرقاماً صحيحة!'))
+
 
 @app.route('/edit_product/<int:product_id>', methods=['GET', 'POST'])
 def edit_product(product_id):
@@ -323,11 +352,18 @@ def edit_product(product_id):
 
     if request.method == 'POST':
         try:
+            # معالجة رفع الملفات عند التعديل
+            image_file = request.files.get('image_file')
+            image_url = product.image_url 
+
+            if image_file and image_file.filename != '':
+                image_url = handle_image_upload(image_file)
+            
             product.name = request.form.get('name')
             product.price = float(request.form.get('price'))
             product.description = request.form.get('description')
             product.stock = int(request.form.get('stock'))
-            product.image_url = request.form.get('image_url') or '/static/placeholder.png'
+            product.image_url = image_url 
             product.category_id = int(request.form.get('category_id'))
             
             db.session.commit()
@@ -384,7 +420,7 @@ def add_category():
 def delete_category(category_id):
     if session.get('is_admin') != True: return redirect(url_for('admin_login'))
     category = Category.query.get_or_404(category_id)
-    # منع حذف الفئة إذا كانت تحتوي على منتجات مرتبطة
+    
     if category.products:
         return redirect(url_for('admin_panel', message=f'لا يمكن حذف الفئة {category.name}. يجب نقل أو حذف المنتجات المرتبطة أولاً.'))
     
@@ -397,7 +433,10 @@ def delete_category(category_id):
 
 if __name__ == '__main__':
     with app.app_context():
-        # إنشاء الجداول إذا لم تكن موجودة.
+        # التأكد من وجود مجلد الرفع عند بدء التشغيل
+        if not os.path.exists(app.config['UPLOAD_FOLDER']):
+            os.makedirs(app.config['UPLOAD_FOLDER'])
+            
         db.create_all() 
         
         # إضافة بيانات تجريبية (فئات)

@@ -3,158 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة تحكم المتجر</title>
+    <title>لوحة إدارة المتجر</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
-        body { font-family: sans-serif; margin: 20px; text-align: right; direction: rtl; background-color: #f8f8f8; }
-        h1, h2 { color: #333; border-bottom: 2px solid #ccc; padding-bottom: 10px; }
-        form { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 30px; }
-        label { display: block; margin-top: 10px; font-weight: bold; }
-        input[type="text"], input[type="number"], textarea, select { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-top: 20px; }
-        button:hover { background-color: #0056b3; }
-        table { width: 100%; border-collapse: collapse; background-color: white; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: right; }
-        th { background-color: #f2f2f2; }
-        .back-link { display: inline-block; margin-bottom: 15px; color: #007bff; text-decoration: none; }
+        /* تنسيقات خاصة بلوحة الإدارة */
+        .admin-section {
+            background: white;
+            padding: 20px;
+            margin-bottom: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .admin-header a {
+            background-color: #dc3545;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 5px;
+            text-decoration: none;
+            transition: background-color 0.3s;
+        }
+        .admin-header a:hover {
+            background-color: #c82333;
+        }
+        table img {
+            max-width: 50px;
+            max-height: 50px;
+            border-radius: 4px;
+        }
+        .action-btns button, .action-btns a {
+            margin-left: 5px;
+        }
+        .product-actions form {
+            display: inline;
+        }
     </style>
 </head>
 <body>
-    <a href="{{ url_for('home') }}" class="back-link">العودة إلى المتجر الرئيسي</a>
-    <h1>لوحة تحكم إدارة المنتجات والطلبات</h1>
-    
-    {% if success_message %}
-    <p style="color: green; font-weight: bold;">{{ success_message }}</p>
-    {% endif %}
+    <header class="admin-header">
+        <h1>لوحة إدارة المتجر</h1>
+        <div>
+            <a href="{{ url_for('home') }}" class="admin-link">العودة للمتجر</a>
+            <a href="{{ url_for('admin_logout') }}">تسجيل الخروج</a>
+        </div>
+    </header>
 
-    <h2 style="margin-top: 40px;">إدارة الفئات</h2>
-    <form method="POST" action="{{ url_for('add_category') }}" style="max-width: 400px; display: inline-block; margin-left: 20px;">
-        <input type="text" name="name" placeholder="اسم الفئة الجديدة" required style="width: auto;">
-        <button type="submit" style="margin-top: 5px; padding: 8px 15px;">إضافة فئة</button>
-    </form>
-    
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>الاسم</th>
-                <th>الإجراءات</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for category in categories %}
-            <tr>
-                <td>{{ category.id }}</td>
-                <td>{{ category.name }}</td>
-                <td>
-                    <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف الفئة {{ category.name }}؟ سيتم حذفها إذا لم تكن مرتبطة بمنتجات.');">
-                        <button type="submit" style="background-color: #dc3545; padding: 5px 10px;">حذف</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    
-    <hr style="margin: 30px 0;">
+    <main>
+        {% if success_message %}
+            <div class="message-success">{{ success_message }}</div>
+        {% endif %}
 
-    <h2>إضافة منتج جديد</h2>
-    <form method="POST" action="{{ url_for('add_product') }}">
-        <label for="name">اسم المنتج:</label>
-        <input type="text" id="name" name="name" required>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="message-success">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
 
-        <label for="price">السعر ($):</label>
-        <input type="number" id="price" name="price" step="0.01" required>
+        <section class="admin-section">
+            <h2>إضافة منتج جديد</h2>
+            
+            <form method="POST" action="{{ url_for('add_product') }}" enctype="multipart/form-data">
+                
+                <div class="form-container" style="box-shadow: none;">
+                    <label for="name">اسم المنتج:</label>
+                    <input type="text" id="name" name="name" required>
 
-        <label for="stock">رصيد المخزون:</label>
-        <input type="number" id="stock" name="stock" value="1" required>
+                    <label for="price">السعر ($):</label>
+                    <input type="number" id="price" name="price" step="0.01" required>
 
-        <label for="category_id">الفئة:</label>
-        <select id="category_id" name="category_id" required>
-            {% for category in categories %}
-                <option value="{{ category.id }}">{{ category.name }}</option>
-            {% endfor %}
-        </select>
-        
-        <label for="image_url">رابط الصورة (URL):</label>
-        <input type="text" id="image_url" name="image_url" placeholder="/static/placeholder.png">
+                    <label for="stock">رصيد المخزون:</label>
+                    <input type="number" id="stock" name="stock" required>
+                    
+                    <label for="category_id">الفئة:</label>
+                    <select id="category_id" name="category_id" required>
+                        {% for category in categories %}
+                            <option value="{{ category.id }}">{{ category.name }}</option>
+                        {% endfor %}
+                    </select>
 
-        <label for="description">الوصف:</label>
-        <textarea id="description" name="description"></textarea>
+                    <label for="image_file">تحميل صورة المنتج:</label>
+                    <input type="file" id="image_file" name="image_file" accept=".png, .jpg, .jpeg, .gif">
 
-        <button type="submit">إضافة المنتج</button>
-    </form>
+                    <label for="description">الوصف:</label>
+                    <textarea id="description" name="description"></textarea>
 
-    <hr style="margin: 50px 0;">
+                    <button type="submit">أضف المنتج</button>
+                </div>
+            </form>
+        </section>
 
-    <h2>المنتجات الحالية ({{ products | length }})</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>الصورة</th>
-                <th>الاسم</th>
-                <th>الفئة</th>
-                <th>السعر</th>
-                <th>المخزون</th>
-                <th>الإجراءات</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for product in products %}
-            <tr>
-                <td>{{ product.id }}</td>
-                <td><img src="{{ product.image_url }}" style="width: 50px; height: 50px; object-fit: cover;"></td>
-                <td>{{ product.name }}</td>
-                <td>{{ product.category.name }}</td>
-                <td>${{ product.price | round(2) }}</td>
-                <td>{{ product.stock }}</td>
-                <td>
-                    <a href="{{ url_for('edit_product', product_id=product.id) }}" style="padding: 5px 10px; background-color: #ffc107; color: #333; border-radius: 4px; text-decoration: none;">تعديل</a>
-                    <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف المنتج {{ product.name }}؟');">
-                        <button type="submit" style="background-color: #dc3545; padding: 5px 10px; margin-top: 0;">حذف</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+        <section class="admin-section">
+            <h2>إدارة الفئات</h2>
+            
+            <form method="POST" action="{{ url_for('add_category') }}" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <input type="text" name="name" placeholder="اسم الفئة الجديدة" required style="flex-grow: 1; padding: 10px;">
+                <button type="submit">إضافة فئة</button>
+            </form>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>الاسم</th>
+                        <th>عدد المنتجات</th>
+                        <th>الإجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for category in categories %}
+                        <tr>
+                            <td>{{ category.id }}</td>
+                            <td>{{ category.name }}</td>
+                            <td>{{ category.products|length }}</td>
+                            <td>
+                                <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف الفئة (سيتم منع الحذف إذا كانت تحتوي على منتجات)؟');">
+                                    <button type="submit" style="background-color: #dc3545; padding: 6px 10px;">حذف</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
 
-    <hr style="margin: 50px 0;">
 
-    <h2>سجل الطلبات ({{ orders | length }})</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>رقم الطلب</th>
-                <th>العميل</th>
-                <th>الإجمالي</th>
-                <th>التاريخ</th>
-                <th>الحالة</th>
-                <th>الإجراءات</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for order in orders %}
-            <tr>
-                <td><a href="{{ url_for('order_details', order_id=order.id) }}">#{{ order.id }}</a></td>
-                <td>{{ order.customer_name }}</td>
-                <td>${{ order.total_price | round(2) }}</td>
-                <td>{{ order.date_placed.strftime('%Y-%m-%d %H:%M') }}</td>
-                <td>{{ order.status }}</td>
-                <td>
-                    <form method="POST" action="{{ url_for('update_order_status', order_id=order.id) }}" style="display: inline-flex; gap: 5px;">
-                        <select name="status">
-                            <option value="New" {% if order.status == 'New' %}selected{% endif %}>جديد</option>
-                            <option value="Processing" {% if order.status == 'Processing' %}selected{% endif %}>قيد المعالجة</option>
-                            <option value="Shipped" {% if order.status == 'Shipped' %}selected{% endif %}>تم الشحن</option>
-                            <option value="Delivered" {% if order.status == 'Delivered' %}selected{% endif %}>تم التوصيل</option>
-                        </select>
-                        <button type="submit" style="background-color: #5cb85c; padding: 5px 10px; margin-top: 0;">تحديث</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+        <section class="admin-section">
+            <h2>المنتجات الحالية ({{ products|length }})</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>الصورة</th>
+                        <th>الاسم</th>
+                        <th>السعر ($)</th>
+                        <th>المخزون</th>
+                        <th>الفئة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in products %}
+                        <tr>
+                            <td>{{ product.id }}</td>
+                            <td><img src="{{ product.image_url }}" alt="{{ product.name }}" onerror="this.src='/static/placeholder.png'"></td>
+                            <td>{{ product.name }}</td>
+                            <td>{{ product.price | round(2) }}</td>
+                            <td>{{ product.stock }}</td>
+                            <td>{{ product.category.name if product.category else 'غير محدد' }}</td>
+                            <td class="action-btns">
+                                <a href="{{ url_for('edit_product', product_id=product.id) }}" style="background-color: #ffc107; color: #333; padding: 6px 10px;">تعديل</a>
+                                <form method="POST" action="{{ url_for('delete_product', product_id=product.id) }}" onsubmit="return confirm('هل أنت متأكد من حذف المنتج {{ product.name }}؟');">
+                                    <button type="submit" style="background-color: #dc3545; padding: 6px 10px;">حذف</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="admin-section">
+            <h2>الطلبات الحديثة ({{ orders|length }})</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>العميل</th>
+                        <th>الإجمالي ($)</th>
+                        <th>التاريخ</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                        <tr>
+                            <td>{{ order.id }}</td>
+                            <td>{{ order.customer_name }}</td>
+                            <td>{{ order.total_price | round(2) }}</td>
+                            <td>{{ order.date_placed.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td>
+                                <form method="POST" action="{{ url_for('update_order_status', order_id=order.id) }}" style="display: inline;">
+                                    <select name="status" onchange="this.form.submit()">
+                                        <option value="New" {% if order.status == 'New' %}selected{% endif %}>جديد</option>
+                                        <option value="Processing" {% if order.status == 'Processing' %}selected{% endif %}>قيد المعالجة</option>
+                                        <option value="Shipped" {% if order.status == 'Shipped' %}selected{% endif %}>تم الشحن</option>
+                                        <option value="Delivered" {% if order.status == 'Delivered' %}selected{% endif %}>تم التسليم</option>
+                                    </select>
+                                </form>
+                            </td>
+                            <td>
+                                <a href="{{ url_for('order_details', order_id=order.id) }}" style="background-color: #17a2b8; padding: 6px 10px;">تفاصيل</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    </main>
 </body>
 </html>

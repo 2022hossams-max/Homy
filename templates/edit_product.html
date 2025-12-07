@@ -4,46 +4,75 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تعديل المنتج: {{ product.name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
-        body { font-family: sans-serif; margin: 20px; text-align: right; direction: rtl; background-color: #f8f8f8; }
-        h1 { color: #333; border-bottom: 2px solid #ccc; padding-bottom: 10px; }
-        form { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; }
-        label { display: block; margin-top: 10px; font-weight: bold; }
-        input[type="text"], input[type="number"], textarea, select { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-top: 20px; }
-        button:hover { background-color: #1e7e34; }
-        .back-link { display: inline-block; margin-bottom: 15px; color: #007bff; text-decoration: none; }
+        /* تنسيقات إضافية لمركزة النموذج */
+        .form-container {
+            max-width: 700px;
+            margin: 40px auto;
+            padding: 30px;
+        }
+        .current-image-preview {
+            margin: 15px 0;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .current-image-preview img {
+            max-width: 150px;
+            height: auto;
+            display: block;
+            margin-top: 10px;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
-    <a href="{{ url_for('admin_panel') }}" class="back-link">العودة إلى لوحة التحكم</a>
-    <h1>تعديل المنتج: {{ product.name }} (ID: {{ product.id }})</h1>
-    
-    <form method="POST" action="{{ url_for('edit_product', product_id=product.id) }}">
-        
-        <label for="name">اسم المنتج:</label>
-        <input type="text" id="name" name="name" value="{{ product.name }}" required>
+    <header>
+        <h1>تعديل المنتج: {{ product.name }}</h1>
+        <div>
+            <a href="{{ url_for('admin_panel') }}" class="admin-link">العودة للوحة الإدارة</a>
+        </div>
+    </header>
 
-        <label for="price">السعر ($):</label>
-        <input type="number" id="price" name="price" step="0.01" value="{{ product.price }}" required>
+    <main>
+        <section class="form-container">
+            <h2>تعديل بيانات المنتج</h2>
+            
+            <form method="POST" action="{{ url_for('edit_product', product_id=product.id) }}" enctype="multipart/form-data">
+                
+                <label for="name">اسم المنتج:</label>
+                <input type="text" id="name" name="name" value="{{ product.name }}" required>
 
-        <label for="stock">رصيد المخزون:</label>
-        <input type="number" id="stock" name="stock" value="{{ product.stock }}" required>
+                <label for="price">السعر ($):</label>
+                <input type="number" id="price" name="price" step="0.01" value="{{ product.price }}" required>
 
-        <label for="category_id">الفئة:</label>
-        <select id="category_id" name="category_id" required>
-            {% for category in categories %}
-                <option value="{{ category.id }}" {% if category.id == product.category_id %}selected{% endif %}>{{ category.name }}</option>
-            {% endfor %}
-        </select>
-        
-        <label for="image_url">رابط الصورة (URL):</label>
-        <input type="text" id="image_url" name="image_url" value="{{ product.image_url }}" placeholder="/static/placeholder.png">
+                <label for="stock">رصيد المخزون:</label>
+                <input type="number" id="stock" name="stock" value="{{ product.stock }}" required>
+                
+                <label for="category_id">الفئة:</label>
+                <select id="category_id" name="category_id" required>
+                    {% for category in categories %}
+                        <option value="{{ category.id }}" {% if category.id == product.category_id %}selected{% endif %}>
+                            {{ category.name }}
+                        </option>
+                    {% endfor %}
+                </select>
 
-        <label for="description">الوصف:</label>
-        <textarea id="description" name="description">{{ product.description }}</textarea>
+                <div class="current-image-preview">
+                    <label>الصورة الحالية:</label>
+                    <img src="{{ product.image_url }}" alt="الصورة الحالية" onerror="this.src='/static/placeholder.png'">
+                </div>
 
-        <button type="submit">حفظ التعديلات</button>
-    </form>
+                <label for="image_file">تغيير صورة المنتج (اختياري):</label>
+                <input type="file" id="image_file" name="image_file" accept=".png, .jpg, .jpeg, .gif">
+
+                <label for="description">الوصف:</label>
+                <textarea id="description" name="description">{{ product.description }}</textarea>
+
+                <button type="submit">حفظ التعديلات</button>
+            </form>
+        </section>
+    </main>
 </body>
 </html>
