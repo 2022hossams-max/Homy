@@ -1,138 +1,299 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const productsContainer = document.getElementById('products-container');
+    // --- 1. تحديد العناصر الرئيسية في DOM ---
+
+    const productsContainer = document.querySelector('#products-container .products-grid');
+    const cartCountElement = document.getElementById('cart-count');
+    const favoritesCountElement = document.getElementById('favorites-count');
     const cartDisplay = document.getElementById('cart-display');
-    const cartCountSpan = document.getElementById('cart-count');
     const cartItemsList = document.getElementById('cart-items-list');
-    const cartTotalStrong = document.getElementById('cart-total');
-    const viewCartBtn = document.getElementById('view-cart-btn');
-    const clearCartBtn = document.getElementById('clear-cart-btn');
+    const cartTotalElement = document.getElementById('cart-total');
+    const searchInput = document.getElementById('search-input');
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    const viewCartButton = document.getElementById('view-cart-btn');
+    const clearCartButton = document.getElementById('clear-cart-btn');
 
-    // جلب المنتجات وعرضها
-    async function fetchProducts() {
-        try {
-            const response = await fetch('/products');
-            const products = await response.json();
-            displayProducts(products);
-        } catch (error) {
-            productsContainer.innerHTML = '<h2>عفواً، حدث خطأ في تحميل المنتجات.</h2>';
-            console.error('Error fetching products:', error);
-        }
-    }
+    // --- 2. حالة التطبيق (Global State) ---
 
-    // جلب بيانات السلة وعرضها
-    async function fetchCartAndDisplay() {
-        try {
-            const response = await fetch('/cart');
-            const cartData = await response.json();
-            
-            cartCountSpan.textContent = cartData.count;
-            displayCart(cartData);
-        } catch (error) {
-            console.error('Error fetching cart:', error);
-        }
-    }
-
-    // إضافة منتج للسلة
-    async function addToCart(productId) {
-        try {
-            const response = await fetch(`/cart/add/${productId}`);
-            const data = await response.json();
-            
-            cartCountSpan.textContent = data.cart_count;
-            alert(data.message); 
-            
-            if (!cartDisplay.classList.contains('hidden')) {
-                fetchCartAndDisplay();
-            }
-        } catch (error) {
-            console.error('Error adding to cart:', error);
-            alert('حدث خطأ أثناء إضافة المنتج للسلة.');
-        }
-    }
+    // استخدام Flask Session لإدارة السلة والمفضلة (نقوم بتحديثها عبر الـ API)
+    // لكن للاعتماد على حالة مبدئية عند التحميل، نعتمد على ما يجلبه الـ API
     
-    // تفريغ السلة
-    async function clearCart() {
-        if (!confirm('هل أنت متأكد من تفريغ سلة المشتريات؟')) return;
+    // سنستخدم وظيفة مساعدة لجلب حالة المفضلة والسلة عند التحميل:
+
+    async function fetchInitialState() {
+        // جلب حالة السلة
+        const cartResponse = await fetch('/cart');
+        const cartData = await cartResponse.json();
+        cartCountElement.textContent = cartData.count;
+
+        // جلب حالة المفضلة
+        const favResponse = await fetch('/favorites');
+        const favData = await favResponse.json();
+        favoritesCountElement.textContent = favData.length;
+
+        // تخزين قائمة IDs المفضلة محليًا للمقارنة في عرض المنتجات
+        const favoritesIds = favData.items ? favData.items.map(p => p.id) : favData.map(p => p.id);
+        sessionStorage.setItem('current_favorites', JSON.stringify(favoritesIds));
+    }
+
+
+    // --- 3. وظائف جلب وعرض البيانات ---
+
+    /**
+     * جلب المنتجات من الخادم باستخدام مسار الـ API المصحح: /api/products
+     * @param {string} categoryId - فلتر حسب ID الفئة.
+     * @param {string} searchTerm - فلتر حسب مصطلح البحث.
+     */
+    async function fetchProducts(categoryId = '', searchTerm = '') {
+        productsContainer.innerHTML = '<p style="width: 100%; text-align: center;">جاري تحميل المنتجات...</p>';
+        
+        // 🛑 المسار المصحح الذي يحل مشكلة الـ 404
+        let url = `/api/products?query=${encodeURIComponent(searchTerm)}`;
+        if (categoryId) {
+            url += `&category_id=${categoryId}`;
+        }
         
         try {
-            const response = await fetch('/cart/clear');
-            const data = await response.json();
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                // عرض رسالة الخطأ في حال كانت الاستجابة غير ناجحة (مثل 500)
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
             
-            cartCountSpan.textContent = data.cart_count;
-            cartItemsList.innerHTML = '<p>السلة فارغة حالياً.</p>';
-            cartTotalStrong.textContent = '$0.00';
-            alert(data.message);
+            const products = await response.json();
+            renderProducts(products);
+
         } catch (error) {
-            console.error('Error clearing cart:', error);
+            console.error('Error fetching products:', error);
+            productsContainer.innerHTML = '<h2 style="width: 100%; color: red;">عفواً، حدث خطأ أثناء تحميل المنتجات.</h2>';
         }
     }
 
-    // عرض المنتجات وتفعيل أزرار الإضافة للسلة
-    function displayProducts(products) {
-        productsContainer.innerHTML = '<h2>منتجاتنا:</h2>';
+
+    /**
+     * عرض قائمة المنتجات في واجهة المستخدم.
+     */
+    function renderProducts(products) {
+        productsContainer.innerHTML = '';
+        if (products.length === 0) {
+            productsContainer.innerHTML = '<p style="width: 100%;">لا توجد منتجات تطابق المعايير المختارة.</p>';
+            return;
+        }
         
-        const productsGrid = document.createElement('div');
-        productsGrid.className = 'products-grid';
+        const favoritesIds = JSON.parse(sessionStorage.getItem('current_favorites') || '[]');
 
         products.forEach(product => {
             const productCard = document.createElement('div');
             productCard.className = 'product-card';
             
+            // حالة زر المفضلة
+            const isFavorite = favoritesIds.includes(product.id);
+            const favIcon = isFavorite ? '❤️ إزالة' : '🤍 أضف للمفضلة';
+            const favClass = isFavorite ? 'remove-favorite-btn' : 'add-favorite-btn';
+
             productCard.innerHTML = `
-                <h3>${product.name}</h3>
-                <p>${product.description}</p>
-                <p><strong>السعر: $${product.price}</strong></p>
-                <button class="add-to-cart-btn" data-id="${product.id}">أضف إلى السلة</button>
+                <a href="/product/${product.id}"> 
+                    <img src="${product.image_url}" alt="${product.name}" onerror="this.src='/static/placeholder.png'">
+                </a>
+                <h3><a href="/product/${product.id}">${product.name}</a></h3>
+                <p style="font-size: 0.9em; color: #6c757d;">الفئة: ${product.category_name}</p>
+                <p><strong>السعر: $${product.price.toFixed(2)}</strong></p>
+                <p style="font-size: 0.9em;">
+                    ${product.stock > 0 ? `متوفر: ${product.stock}` : 'نفد المخزون'}
+                </p>
+                
+                <div class="product-actions">
+                    ${product.stock > 0 
+                        ? `<button class="add-to-cart-btn" data-id="${product.id}">أضف إلى السلة</button>`
+                        : `<button disabled style="background-color: #6c757d; cursor: not-allowed;">نفد المخزون</button>`
+                    }
+                    
+                    <button class="toggle-favorite-btn ${favClass}" data-id="${product.id}">
+                        ${favIcon}
+                    </button>
+                </div>
             `;
-            productsGrid.appendChild(productCard);
+            productsContainer.appendChild(productCard);
         });
-        
-        productsContainer.appendChild(productsGrid);
-        
+
+        // يجب إضافة مستمعي الأحداث هنا بعد بناء البطاقات
+        setupProductEventListeners();
+    }
+
+    /**
+     * عرض محتويات السلة بعد جلبها من الـ API.
+     */
+    async function fetchCartAndRender() {
+        try {
+            const response = await fetch('/cart');
+            const cartData = await response.json();
+            
+            const items = cartData.items;
+            const total = cartData.total;
+
+            cartCountElement.textContent = cartData.count;
+
+            cartItemsList.innerHTML = '';
+            if (items.length === 0) {
+                cartItemsList.innerHTML = '<p>سلة المشتريات فارغة.</p>';
+                cartTotalElement.textContent = '$0.00';
+                return;
+            }
+
+            items.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'cart-item';
+                itemDiv.innerHTML = `
+                    <span>${item.name} (x${item.quantity})</span>
+                    <span>$${item.item_total.toFixed(2)}</span>
+                    `;
+                cartItemsList.appendChild(itemDiv);
+            });
+
+            cartTotalElement.textContent = `$${total.toFixed(2)}`;
+
+        } catch (error) {
+            console.error('Error fetching cart:', error);
+            alert('حدث خطأ أثناء جلب محتويات السلة.');
+        }
+    }
+
+
+    // --- 4. وظائف الإجراءات (Actions) ---
+
+    /**
+     * إضافة منتج إلى السلة عبر الـ API.
+     */
+    async function addToCart(productId) {
+        try {
+            const response = await fetch(`/cart/add/${productId}`);
+            const data = await response.json();
+            
+            if (response.ok) {
+                alert(data.message);
+                cartCountElement.textContent = data.cart_count;
+            } else {
+                alert(`فشل الإضافة: ${data.message}`);
+            }
+
+        } catch (error) {
+            console.error('Error adding to cart:', error);
+            alert('فشل الاتصال بالخادم لإضافة المنتج.');
+        }
+    }
+
+    /**
+     * تفريغ السلة عبر الـ API.
+     */
+    async function clearCart() {
+        if (!confirm('هل أنت متأكد من تفريغ سلة المشتريات؟')) return;
+
+        try {
+            const response = await fetch('/cart/clear');
+            const data = await response.json();
+
+            alert(data.message);
+            cartCountElement.textContent = data.cart_count;
+            
+            // تحديث العرض إذا كانت السلة مفتوحة
+            if (!cartDisplay.classList.contains('hidden')) {
+                fetchCartAndRender();
+            }
+
+        } catch (error) {
+            console.error('Error clearing cart:', error);
+            alert('فشل الاتصال بالخادم لتفريغ السلة.');
+        }
+    }
+
+    /**
+     * التبديل بين إضافة وإزالة منتج من المفضلة عبر الـ API.
+     */
+    async function toggleFavorite(productId, buttonElement) {
+        try {
+            const response = await fetch(`/favorites/toggle/${productId}`);
+            const data = await response.json();
+            
+            if (response.ok) {
+                alert(data.message);
+                favoritesCountElement.textContent = data.count;
+
+                // تحديث حالة الزر مرئيًا
+                if (data.is_added) {
+                    buttonElement.textContent = '❤️ إزالة';
+                    buttonElement.classList.remove('add-favorite-btn');
+                    buttonElement.classList.add('remove-favorite-btn');
+                } else {
+                    buttonElement.textContent = '🤍 أضف للمفضلة';
+                    buttonElement.classList.remove('remove-favorite-btn');
+                    buttonElement.classList.add('add-favorite-btn');
+                }
+
+                // تحديث حالة المفضلة المحلية
+                await fetchInitialState();
+
+            } else {
+                alert(`فشل العملية: ${data.message}`);
+            }
+
+        } catch (error) {
+            console.error('Error toggling favorite:', error);
+            alert('فشل الاتصال بالخادم لتحديث المفضلة.');
+        }
+    }
+
+
+    // --- 5. وظيفة إعداد مستمعي الأحداث ---
+
+    /**
+     * إعداد مستمعي الأحداث لأزرار السلة والمفضلة بعد عرض المنتجات.
+     */
+    function setupProductEventListeners() {
         document.querySelectorAll('.add-to-cart-btn').forEach(button => {
             button.addEventListener('click', (e) => {
                 const productId = e.target.getAttribute('data-id');
                 addToCart(productId);
             });
         });
-    }
 
-    // عرض محتويات السلة
-    function displayCart(cartData) {
-        cartItemsList.innerHTML = '';
-        if (cartData.items.length === 0) {
-            cartItemsList.innerHTML = '<p>السلة فارغة حالياً.</p>';
-        } else {
-            const list = document.createElement('ul');
-            cartData.items.forEach(item => {
-                const listItem = document.createElement('li');
-                listItem.textContent = `${item.name} x ${item.quantity} - $${item.item_total.toFixed(2)}`;
-                list.appendChild(listItem);
+        document.querySelectorAll('.toggle-favorite-btn').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const productId = e.target.getAttribute('data-id');
+                toggleFavorite(productId, e.target);
             });
-            cartItemsList.appendChild(list);
-
-            // إضافة زر إنهاء الطلب
-            const checkoutBtn = document.createElement('a');
-            checkoutBtn.href = '/checkout';
-            checkoutBtn.textContent = 'الانتقال لإنهاء الطلب';
-            checkoutBtn.style.cssText = 'display: block; text-align: center; margin-top: 20px; padding: 10px; background-color: #ff9800; color: white; text-decoration: none; border-radius: 5px;';
-            cartDisplay.appendChild(checkoutBtn);
-        }
-        
-        cartTotalStrong.textContent = `$${cartData.total.toFixed(2)}`;
+        });
     }
-    
-    // مستمعات الأحداث
-    viewCartBtn.addEventListener('click', () => {
-        cartDisplay.classList.toggle('hidden');
-        if (!cartDisplay.classList.contains('hidden')) {
-            fetchCartAndDisplay();
-        }
-    });
-    
-    clearCartBtn.addEventListener('click', clearCart);
 
-    // التحميل الأولي
+    // --- 6. وظيفة التهيئة (Initialization) ---
+
+    viewCartButton.addEventListener('click', () => {
+        fetchCartAndRender(); // جلب البيانات قبل العرض
+        cartDisplay.classList.toggle('hidden');
+    });
+
+    clearCartButton.addEventListener('click', clearCart);
+
+    // معالج أزرار الفلترة حسب الفئة
+    filterButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            filterButtons.forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+
+            const categoryId = button.dataset.id;
+            const searchTerm = searchInput.value;
+            fetchProducts(categoryId, searchTerm);
+        });
+    });
+
+    // معالج زر البحث
+    document.getElementById('search-button').addEventListener('click', () => {
+        const searchTerm = searchInput.value;
+        const activeFilter = document.querySelector('.filter-btn.active');
+        const categoryId = activeFilter ? activeFilter.dataset.id : '';
+        fetchProducts(categoryId, searchTerm);
+    });
+
+    // تشغيل وظائف التهيئة والبدء في جلب البيانات
+    fetchInitialState();
     fetchProducts();
-    fetchCartAndDisplay();
 });

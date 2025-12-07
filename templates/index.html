@@ -3,19 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>متجر Termux</title>
+    <title>متجر Termux الإلكتروني المطور</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <header>
-        <h1>متجر Termux الإلكتروني</h1>
-        <button id="view-cart-btn">🛒 سلة المشتريات (<span id="cart-count">0</span>)</button>
-        <a href="{{ url_for('admin_panel') }}" class="admin-link">لوحة الإدارة</a>
+        <h1>متجر Termux الإلكتروني المطور</h1>
+        <div>
+            <a href="{{ url_for('favorites_view') }}" id="view-favorites-btn" style="color: white; text-decoration: none; margin-left: 15px;">⭐ المفضلة (<span id="favorites-count">0</span>)</a>
+            
+            <button id="view-cart-btn">🛒 سلة المشتريات (<span id="cart-count">0</span>)</button>
+            
+            <a href="{{ url_for('admin_login') }}" class="admin-link">لوحة الإدارة</a>
+        </div>
     </header>
     
     <main>
+        <section id="filter-and-search">
+            <input type="text" id="search-input" placeholder="ابحث بالاسم أو الوصف..." style="flex-grow: 1;">
+            <button id="search-button">بحث</button>
+            
+            <div id="category-filters">
+                <button class="filter-btn active" data-id="">الكل</button>
+                {% for category in categories %}
+                    <button class="filter-btn" data-id="{{ category.id }}">{{ category.name }}</button>
+                {% endfor %}
+            </div>
+        </section>
+
         <section id="products-container">
-            <h2>جاري تحميل المنتجات...</h2>
+            <h2>منتجاتنا:</h2>
+            <div class="products-grid">جاري تحميل المنتجات...</div>
         </section>
 
         <section id="cart-display" class="hidden">

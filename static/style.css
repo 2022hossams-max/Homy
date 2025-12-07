@@ -1,56 +1,128 @@
+/* --- الإعدادات الأساسية وإعادة الضبط --- */
 body {
-    font-family: sans-serif;
+    font-family: 'Arial', sans-serif;
     margin: 0;
     padding: 0;
-    background-color: #f4f4f4;
-    text-align: right; 
-    direction: rtl;
+    background-color: #f4f4f9;
+    color: #333;
+    direction: rtl; /* دعم اللغة العربية */
+    text-align: right;
+}
+
+a {
+    text-decoration: none;
+    color: #007bff;
+}
+
+a:hover {
+    text-decoration: underline;
 }
 
 header {
-    background-color: #333;
+    background-color: #343a40;
     color: white;
-    padding: 1em;
+    padding: 15px 25px;
     display: flex;
-    justify-content: space-between; 
+    justify-content: space-between;
     align-items: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 header h1 {
     margin: 0;
-    flex-grow: 1;
-    text-align: center;
+    font-size: 1.5em;
+}
+
+header div {
+    display: flex;
+    align-items: center;
+}
+
+button, .admin-link, #view-favorites-btn {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    margin-right: 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    font-size: 1em;
+}
+
+button:hover {
+    background-color: #0056b3;
 }
 
 .admin-link {
-    color: #ff9800;
-    text-decoration: none;
-    padding: 10px;
-    border: 1px solid #ff9800;
-    border-radius: 5px;
-    margin-right: 15px;
+    background-color: #6c757d;
+}
+.admin-link:hover {
+    background-color: #5a6268;
 }
 
-#view-cart-btn {
-    background-color: #ff9800;
-    color: white;
-    border: none;
-    padding: 10px 15px;
-    border-radius: 5px;
-    cursor: pointer;
-}
-
+/* --- تنسيقات المحتوى الرئيسي --- */
 main {
     padding: 20px;
     max-width: 1200px;
     margin: 0 auto;
 }
 
-.products-grid {
+h2 {
+    border-bottom: 2px solid #ccc;
+    padding-bottom: 10px;
+    margin-top: 30px;
+    color: #343a40;
+}
+
+/* --- البحث والتصفية --- */
+#filter-and-search {
     display: flex;
     flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+    align-items: center;
+    background: #fff;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+#search-input {
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    flex-grow: 1;
+    min-width: 200px;
+}
+
+#category-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-right: 15px;
+}
+
+.filter-btn {
+    background-color: #e9ecef;
+    color: #333;
+    padding: 8px 15px;
+    border-radius: 20px;
+    transition: background-color 0.2s, color 0.2s;
+    margin: 0;
+}
+
+.filter-btn.active, .filter-btn:hover {
+    background-color: #007bff;
+    color: white;
+}
+
+/* --- شبكة المنتجات (Product Grid) --- */
+.products-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 20px;
-    justify-content: center;
+    margin-top: 20px;
 }
 
 .product-card {
@@ -58,54 +130,176 @@ main {
     border: 1px solid #ddd;
     border-radius: 8px;
     padding: 15px;
-    width: 300px;
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    text-align: center;
+    transition: transform 0.2s;
+}
+
+.product-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.1);
+}
+
+.product-card img {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    border-radius: 5px;
+    margin-bottom: 10px;
 }
 
 .product-card h3 {
-    color: #007bff;
+    font-size: 1.2em;
+    margin-top: 0;
+    margin-bottom: 10px;
 }
 
-.product-card button {
-    background-color: #28a745;
-    color: white;
-    border: none;
-    padding: 10px 15px;
-    border-radius: 5px;
-    cursor: pointer;
-    margin-top: 10px;
+.product-price {
+    color: #dc3545;
+    font-size: 1.1em;
+    font-weight: bold;
+    margin: 10px 0;
 }
 
-/* تنسيقات السلة */
+.product-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 15px;
+}
+
+.add-to-cart-btn {
+    flex-grow: 1;
+    margin-right: 5px;
+}
+
+/* --- زر المفضلة (Wishlist Button) --- */
+.toggle-favorite-btn {
+    background-color: #ffc107; /* لون أصفر خفيف */
+    color: #333;
+    padding: 8px 12px;
+    width: 50px;
+    flex-shrink: 0;
+    text-align: center;
+    margin: 0;
+}
+
+.toggle-favorite-btn:hover {
+    background-color: #e0a800;
+}
+
+
+/* --- عرض السلة (Cart Display) --- */
+#cart-display {
+    background-color: #fff;
+    border: 1px solid #ccc;
+    padding: 20px;
+    margin-top: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
 .hidden {
     display: none;
 }
 
-#cart-display {
-    border: 1px solid #ccc;
-    padding: 20px;
-    margin-top: 20px;
-    background-color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.05);
+#cart-items-list {
+    margin-top: 15px;
 }
 
-#cart-display ul {
-    list-style: none;
-    padding: 0;
+.cart-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px dashed #eee;
 }
 
-#cart-display li {
-    border-bottom: 1px dotted #eee;
-    padding: 5px 0;
+.cart-item span:first-child {
+    font-weight: bold;
+}
+
+.remove-from-cart-btn {
+    background-color: #dc3545;
+    padding: 5px 10px;
+    font-size: 0.8em;
+    margin: 0;
+}
+
+#cart-total {
+    display: block;
+    text-align: left;
+    margin-top: 15px;
+    font-size: 1.2em;
+    color: #007bff;
 }
 
 #clear-cart-btn {
     background-color: #dc3545;
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 5px;
-    cursor: pointer;
     margin-top: 15px;
+}
+
+/* --- تنسيقات صفحات أخرى (Checkout, Admin) --- */
+
+/* تنسيق عام لأي نموذج (Form) */
+.form-container {
+    max-width: 600px;
+    margin: 20px auto;
+    padding: 20px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+.form-container label {
+    display: block;
+    margin-top: 10px;
+    font-weight: bold;
+}
+
+.form-container input[type="text"],
+.form-container input[type="email"],
+.form-container input[type="number"],
+.form-container textarea,
+.form-container select {
+    width: 100%;
+    padding: 10px;
+    margin-top: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.form-container button[type="submit"] {
+    margin-top: 20px;
+    padding: 12px 20px;
+    width: 100%;
+}
+
+/* تنسيق الجداول في صفحة الإدارة */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    background: white;
+}
+
+table th, table td {
+    border: 1px solid #ddd;
+    padding: 12px;
+    text-align: right;
+}
+
+table th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+}
+
+/* رسائل النجاح والخطأ */
+.message-success {
+    padding: 15px;
+    margin-bottom: 20px;
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+    border-radius: 4px;
+    text-align: center;
 }

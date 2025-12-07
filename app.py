@@ -1,9 +1,15 @@
-from flask import Flask, jsonify, render_template, request, session, redirect, url_for
+from flask import Flask, jsonify, render_template, request, session, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from sqlalchemy import or_
+
+# --- إعدادات التطبيق ---
+# يمكن تغيير هذه المتغيرات
+ADMIN_USERNAME = 'hossam_admin'
+ADMIN_PASSWORD = 'strong_password123' 
+# ------------------------
 
 app = Flask(__name__)
-# مفتاح سري إلزامي للجلسات
 app.config['SECRET_KEY'] = 'your_super_secret_key_12345' 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -12,12 +18,19 @@ db = SQLAlchemy(app)
 
 # --- نماذج قاعدة البيانات (Models) ---
 
+class Category(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    products = db.relationship('Product', backref='category', lazy=True)
+
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     price = db.Column(db.Float, nullable=False)
     description = db.Column(db.Text, nullable=True)
     stock = db.Column(db.Integer, default=0)
+    image_url = db.Column(db.String(200), default='/static/placeholder.png') 
+    category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
 
     def to_dict(self):
         return {
@@ -25,7 +38,9 @@ class Product(db.Model):
             'name': self.name,
             'price': self.price,
             'description': self.description,
-            'stock': self.stock
+            'stock': self.stock,
+            'image_url': self.image_url,
+            'category_name': self.category.name if self.category else 'N/A'
         }
 
 class Order(db.Model):
@@ -44,9 +59,10 @@ class OrderItem(db.Model):
     price = db.Column(db.Float, nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
 
-# --- وظائف مساعدة للسلة ---
+# --- وظائف مساعدة للسلة والمفضلة ---
 
 def get_cart_details():
+    """يحصل على تفاصيل سلة المشتريات من الجلسة."""
     if 'cart' not in session:
         session['cart'] = {}
     
@@ -68,26 +84,108 @@ def get_cart_details():
     
     return cart_items, total_price
 
+def get_favorites_details():
+    """يحصل على تفاصيل المنتجات المفضلة من الجلسة."""
+    # المفضلة يتم تخزينها كقائمة من IDs المنتجات
+    favorites_ids = [int(id) for id in session.get('favorites', [])]
+    
+    # جلب تفاصيل المنتجات من قاعدة البيانات
+    favorite_products = Product.query.filter(Product.id.in_(favorites_ids)).all()
+    
+    return [p.to_dict() for p in favorite_products]
+
 # --- مسارات المتجر العام (Frontend Routes) ---
 
 @app.route('/')
 def home():
-    return render_template('index.html')
+    categories = Category.query.all()
+    # يتم تمرير حالة المفضلة لعرض العدد الصحيح في الرأس
+    favorites_count = len(session.get('favorites', []))
+    return render_template('index.html', categories=categories, favorites_count=favorites_count) 
 
-@app.route('/products')
+@app.route('/product/<int:product_id>')
+def product_detail(product_id):
+    product = Product.query.get_or_404(product_id)
+    return render_template('product_detail.html', product=product)
+
+# --- مسارات API (لجلب البيانات بواسطة JavaScript) ---
+
+# 🆕 المسار المحدث الذي يحل مشكلة 404
+@app.route('/api/products')
 def get_products():
-    products = Product.query.all()
+    # هنا تم تغيير 'query' ليتطابق مع ما تم إرساله من app.js
+    query = request.args.get('query') 
+    category_id = request.args.get('category_id')
+    
+    products_query = Product.query
+    
+    if query:
+        products_query = products_query.filter(or_(
+            Product.name.contains(query),
+            Product.description.contains(query)
+        ))
+    
+    if category_id and category_id.isdigit():
+        products_query = products_query.filter_by(category_id=int(category_id))
+
+    products = products_query.all()
     return jsonify([p.to_dict() for p in products])
 
-@app.route('/cart/add/<int:product_id>')
-def add_to_cart(product_id):
+# --- مسارات المفضلة (Wishlist Routes) ---
+
+@app.route('/favorites')
+def favorites_view():
+    favorite_products = get_favorites_details()
+    return render_template('favorites.html', products=favorite_products)
+
+@app.route('/favorites/toggle/<int:product_id>')
+def toggle_favorite(product_id):
+    if 'favorites' not in session:
+        session['favorites'] = []
+    
+    # نحول IDs إلى int للتأكد من التناسق في قائمة الجلسة
+    favorites_list = [int(id) for id in session['favorites']]
+    
     product = Product.query.get(product_id)
     if not product:
         return jsonify({"message": "المنتج غير موجود"}), 404
 
+    if product_id in favorites_list:
+        # إزالة
+        session['favorites'].remove(product_id)
+        message = f"تم إزالة {product.name} من المفضلة."
+        is_added = False
+    else:
+        # إضافة
+        session['favorites'].append(product_id)
+        message = f"تم إضافة {product.name} إلى المفضلة."
+        is_added = True
+        
+    session.modified = True
+    
+    return jsonify({
+        "message": message, 
+        "count": len(session['favorites']),
+        "is_added": is_added
+    })
+    
+# --- مسارات السلة (Cart Routes) ---
+
+@app.route('/cart/add/<int:product_id>')
+def add_to_cart(product_id):
+    product = Product.query.get(product_id)
+    if not product or product.stock <= 0:
+        return jsonify({"message": "المنتج غير متوفر أو نفد مخزونه"}), 404
+
     cart = session.get('cart', {})
     product_id_str = str(product_id)
-    cart[product_id_str] = cart.get(product_id_str, 0) + 1
+    
+    # التحقق من المخزون قبل الإضافة
+    current_quantity = cart.get(product_id_str, 0)
+    if current_quantity >= product.stock:
+        return jsonify({"message": f"لا يمكن إضافة المزيد، الحد الأقصى للمخزون هو {product.stock}"}), 400
+        
+    cart[product_id_str] = current_quantity + 1
     session['cart'] = cart
     session.modified = True 
     return jsonify({"message": f"تمت إضافة {product.name} إلى السلة", "cart_count": sum(cart.values())})
@@ -112,6 +210,7 @@ def checkout():
     cart_items, total_price = get_cart_details()
 
     if not cart_items:
+        flash("السلة فارغة، يرجى إضافة منتجات أولاً.")
         return redirect(url_for('home'))
 
     if request.method == 'POST':
@@ -127,6 +226,11 @@ def checkout():
         db.session.commit()
         
         for item in cart_items:
+            # تحديث المخزون (خصم الكمية)
+            product = Product.query.get(item['product_id'])
+            if product and product.stock >= item['quantity']:
+                product.stock -= item['quantity']
+            
             order_item = OrderItem(
                 order_id=new_order.id,
                 product_name=item['name'],
@@ -148,60 +252,96 @@ def checkout():
 def order_success(order_id):
     return render_template('order_success.html', order_id=order_id)
 
-# --- مسارات الإدارة (Admin Routes) ---
+# --- مسارات الإدارة والمصادقة (Admin & Auth Routes) ---
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session['is_admin'] = True
+            return redirect(url_for('admin_panel', message='مرحباً أيها المشرف!'))
+        else:
+            return render_template('admin_login.html', error='خطأ في اسم المستخدم أو كلمة المرور.')
+    return render_template('admin_login.html')
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('admin_login'))
 
 @app.route('/admin')
 def admin_panel():
+    # التحقق من المصادقة: إذا لم يكن مشرفاً، قم بإعادة التوجيه لصفحة تسجيل الدخول
+    if session.get('is_admin') != True:
+        return redirect(url_for('admin_login'))
+
     products = Product.query.all()
     orders = Order.query.order_by(Order.date_placed.desc()).all() 
+    categories = Category.query.all()
     success_message = request.args.get('message')
     
-    return render_template('admin.html', products=products, orders=orders, success_message=success_message) 
+    return render_template('admin.html', products=products, orders=orders, categories=categories, success_message=success_message) 
+
+# جميع مسارات الإدارة يجب أن تحتوي على فحص المصادقة
 
 @app.route('/add_product', methods=['POST'])
 def add_product():
+    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
     name = request.form.get('name')
     price = request.form.get('price')
     description = request.form.get('description')
     stock = request.form.get('stock')
-    
-    if not name or not price:
-        return "خطأ: يجب توفير اسم وسعر للمنتج.", 400
+    image_url = request.form.get('image_url') or '/static/placeholder.png'
+    category_id = request.form.get('category_id')
+
+    if not all([name, price, stock, category_id]):
+        return redirect(url_for('admin_panel', message='خطأ: يجب توفير جميع الحقول المطلوبة للمنتج!'))
     
     try:
         new_product = Product(
             name=name,
             price=float(price),
             description=description,
-            stock=int(stock)
+            stock=int(stock),
+            image_url=image_url,
+            category_id=int(category_id)
         )
         db.session.add(new_product)
         db.session.commit()
         return redirect(url_for('admin_panel', message=f'تمت إضافة المنتج {name} بنجاح!'))
     except ValueError:
-        return "خطأ: يجب أن يكون السعر ورصيد المخزون أرقاماً.", 400
+        return redirect(url_for('admin_panel', message='خطأ: يجب أن يكون السعر ورصيد المخزون أرقاماً صحيحة!'))
 
 @app.route('/edit_product/<int:product_id>', methods=['GET', 'POST'])
 def edit_product(product_id):
+    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
     product = Product.query.get_or_404(product_id)
-    
+    categories = Category.query.all()
+
     if request.method == 'POST':
-        product.name = request.form.get('name')
-        product.price = float(request.form.get('price'))
-        product.description = request.form.get('description')
-        product.stock = int(request.form.get('stock'))
-        
         try:
+            product.name = request.form.get('name')
+            product.price = float(request.form.get('price'))
+            product.description = request.form.get('description')
+            product.stock = int(request.form.get('stock'))
+            product.image_url = request.form.get('image_url') or '/static/placeholder.png'
+            product.category_id = int(request.form.get('category_id'))
+            
             db.session.commit()
             return redirect(url_for('admin_panel', message=f'تم تعديل المنتج {product.name} بنجاح!'))
         except:
             db.session.rollback()
-            return "خطأ أثناء التعديل", 500
+            return redirect(url_for('admin_panel', message='خطأ أثناء التعديل!'))
 
-    return render_template('edit_product.html', product=product)
+    return render_template('edit_product.html', product=product, categories=categories)
+
 
 @app.route('/delete_product/<int:product_id>', methods=['POST'])
 def delete_product(product_id):
+    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
     product = Product.query.get_or_404(product_id)
     product_name = product.name
     
@@ -212,6 +352,7 @@ def delete_product(product_id):
 
 @app.route('/update_order_status/<int:order_id>', methods=['POST'])
 def update_order_status(order_id):
+    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
     order = Order.query.get_or_404(order_id)
     new_status = request.form.get('status')
     
@@ -224,17 +365,57 @@ def update_order_status(order_id):
 
 @app.route('/order_details/<int:order_id>')
 def order_details(order_id):
+    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
     order = Order.query.get_or_404(order_id)
     return render_template('order_details.html', order=order)
 
+@app.route('/add_category', methods=['POST'])
+def add_category():
+    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    name = request.form.get('name')
+    if name:
+        new_category = Category(name=name)
+        db.session.add(new_category)
+        db.session.commit()
+        return redirect(url_for('admin_panel', message=f'تمت إضافة الفئة {name} بنجاح.'))
+    return redirect(url_for('admin_panel', message='خطأ: يجب توفير اسم للفئة.'))
+
+@app.route('/delete_category/<int:category_id>', methods=['POST'])
+def delete_category(category_id):
+    if session.get('is_admin') != True: return redirect(url_for('admin_login'))
+    category = Category.query.get_or_404(category_id)
+    # منع حذف الفئة إذا كانت تحتوي على منتجات مرتبطة
+    if category.products:
+        return redirect(url_for('admin_panel', message=f'لا يمكن حذف الفئة {category.name}. يجب نقل أو حذف المنتجات المرتبطة أولاً.'))
+    
+    db.session.delete(category)
+    db.session.commit()
+    return redirect(url_for('admin_panel', message=f'تم حذف الفئة {category.name} بنجاح.'))
+
+
+# --- التشغيل والإعداد الأولي ---
+
 if __name__ == '__main__':
     with app.app_context():
-        db.create_all()
+        # إنشاء الجداول إذا لم تكن موجودة.
+        db.create_all() 
         
-        # إضافة بيانات تجريبية (إذا كانت قاعدة البيانات فارغة)
-        if Product.query.count() == 0:
-            db.session.add(Product(name="Laptop Pro", price=1200.0, description="Powerful machine.", stock=10))
-            db.session.add(Product(name="Wireless Mouse", price=25.0, description="Ergonomic design.", stock=50))
+        # إضافة بيانات تجريبية (فئات)
+        if Category.query.count() == 0:
+            tech = Category(name="Electronics")
+            books = Category(name="Books")
+            db.session.add_all([tech, books])
             db.session.commit()
+
+        # إضافة بيانات تجريبية (منتجات)
+        if Product.query.count() == 0:
+            tech = Category.query.filter_by(name="Electronics").first()
+            books = Category.query.filter_by(name="Books").first()
+
+            if tech and books:
+                db.session.add(Product(name="Laptop Pro", price=1200.0, description="Powerful machine for development and gaming.", stock=10, image_url="/static/placeholder.png", category_id=tech.id))
+                db.session.add(Product(name="Wireless Mouse", price=25.0, description="Ergonomic design with high precision sensor.", stock=50, image_url="/static/placeholder.png", category_id=tech.id))
+                db.session.add(Product(name="Python Guide", price=50.0, description="Beginner's guide to Python and Flask.", stock=20, image_url="/static/placeholder.png", category_id=books.id))
+                db.session.commit()
     
     app.run(debug=True, host='0.0.0.0', port=5000)
