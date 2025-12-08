@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة إدارة المتجر</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* ... (تنسيقات CSS السابقة كما هي) ... */
         .admin-section {
@@ -36,6 +37,10 @@
             {% endif %}
         {% endwith %}
 
+        <section class="admin-section">
+            <a href="{{ url_for('manage_admins') }}" class="admin-link" style="margin-bottom:15px;display:inline-block;">إدارة المشرفين</a>
+        </section>
+
         <section class="admin-section dashboard-stats">
             <div class="stat-card">
                 <h3>💰 إجمالي المبيعات المكتملة</h3>
@@ -53,6 +58,35 @@
             </div>
         </section>
 
+        <section class="admin-section">
+            <h2>رسم بياني للمبيعات الشهرية</h2>
+            <canvas id="salesChart" width="600" height="300"></canvas>
+            <script>
+                const salesLabels = {{ stats.sales_labels|tojson }};
+                const salesData = {{ stats.sales_data|tojson }};
+                const ctx = document.getElementById('salesChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: salesLabels,
+                        datasets: [{
+                            label: 'المبيعات (جنيه)',
+                            data: salesData,
+                            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+            </script>
+        </section>
+        </section>
+
         {% if low_stock_products %}
         <section class="admin-section" style="background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404;">
             <h3>تنبيه المخزون المنخفض</h3>
@@ -66,6 +100,16 @@
         {% endif %}
 
         <hr>
+
+        <section class="admin-section">
+            <h2>تغيير كلمة المرور</h2>
+            <form method="POST" action="{{ url_for('change_admin_password') }}" style="display: flex; flex-direction: column; gap: 10px; max-width: 400px;">
+                <input type="password" name="old_password" placeholder="كلمة المرور الحالية" required>
+                <input type="password" name="new_password" placeholder="كلمة المرور الجديدة" required>
+                <input type="password" name="confirm_password" placeholder="تأكيد كلمة المرور الجديدة" required>
+                <button type="submit">تغيير كلمة المرور</button>
+            </form>
+        </section>
 
         {% if permissions.admins %}
         <section class="admin-section">

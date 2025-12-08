@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <title>تعديل صلاحيات المشرف</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h2>تعديل صلاحيات المشرف: {{ admin.username }}</h2>
+    <a href="/manage_admins">عودة لإدارة المشرفين</a>
+    <hr>
+    <form method="post" action="/save_admin_permissions">
+        <input type="hidden" name="admin_id" value="{{ admin.id }}">
+        <label><input type="checkbox" name="can_manage_products" value="1" {% if admin.can_manage_products %}checked{% endif %}> إدارة المنتجات</label><br>
+        <label><input type="checkbox" name="can_manage_orders" value="1" {% if admin.can_manage_orders %}checked{% endif %}> إدارة الطلبات</label><br>
+        <label><input type="checkbox" name="can_manage_reviews" value="1" {% if admin.can_manage_reviews %}checked{% endif %}> إدارة التقييمات</label><br>
+        <label><input type="checkbox" name="can_manage_admins" value="1" {% if admin.can_manage_admins %}checked{% endif %}> إدارة المشرفين</label><br>
+        <button type="submit">حفظ التعديلات</button>
+    </form>
+</body>
+</html>
