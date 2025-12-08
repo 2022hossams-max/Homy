@@ -198,7 +198,49 @@ def inject_currency_helpers():
 def set_currency(currency_code):
     if currency_code in app.config.get('CURRENCY_RATES', {}):
         session['currency'] = currency_code
+    # If called via AJAX, return JSON; otherwise redirect back
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.args.get('ajax') == '1':
+        return jsonify({'currency': session.get('currency')})
     return redirect(request.referrer or url_for('home'))
+
+
+@app.route('/admin/pricing_data')
+def admin_pricing_data():
+    # Return formatted prices for products, orders and stats (used by admin UI for dynamic updates)
+    if 'admin_id' not in session:
+        return jsonify({'error': 'unauthenticated'}), 401
+
+    # products
+    products = Product.query.all()
+    products_data = []
+    for p in products:
+        try:
+            products_data.append({'id': p.id, 'price_display': format_price(p.price)})
+        except Exception:
+            products_data.append({'id': p.id, 'price_display': p.price})
+
+    # orders
+    orders = Order.query.all()
+    orders_data = []
+    for o in orders:
+        try:
+            orders_data.append({'id': o.id, 'total_display': format_price(o.total_price)})
+        except Exception:
+            orders_data.append({'id': o.id, 'total_display': o.total_price})
+
+    # stats: compute total_sales similar to admin_panel
+    total_sales_result = db.session.query(func.sum(Order.total_price)).filter_by(status='Delivered').scalar()
+    total_sales = round(total_sales_result or 0, 2)
+    try:
+        total_sales_display = format_price(total_sales)
+    except Exception:
+        total_sales_display = total_sales
+
+    return jsonify({
+        'products': products_data,
+        'orders': orders_data,
+        'stats': {'total_sales_display': total_sales_display}
+    })
 
 
 def get_cart_details():

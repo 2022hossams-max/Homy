@@ -51,7 +51,7 @@
         <section class="admin-section dashboard-stats">
             <div class="stat-card">
                 <h3>💰 إجمالي المبيعات المكتملة</h3>
-                <p>{{ format_price(stats.total_sales) }}</p>
+                <p id="stats-total-sales">{{ format_price(stats.total_sales) }}</p>
             </div>
             <div class="stat-card">
                 <h3>🔔 الطلبات الجديدة</h3>
@@ -233,7 +233,7 @@
                             <td>{{ product.id }}</td>
                             <td><img src="{{ product.image_url }}" alt="{{ product.name }}" onerror="this.src='/static/placeholder.png'"></td>
                             <td>{{ product.name }}</td>
-                            <td>{{ format_price(product.price) }}</td>
+                            <td class="product-price" data-product-id="{{ product.id }}">{{ format_price(product.price) }}</td>
                             <td style="color: {% if product.stock <= 5 %}red; font-weight: bold;{% endif %}">{{ product.stock }}</td>
                             <td>{{ product.category.name if product.category else 'غير محدد' }}</td>
                             
@@ -365,7 +365,7 @@
                         <tr>
                             <td>{{ order.id }}</td>
                             <td>{{ order.customer_name }}</td>
-                            <td>{{ format_price(order.total_price) }}</td>
+                            <td class="order-total" data-order-id="{{ order.id }}">{{ format_price(order.total_price) }}</td>
                             <td>{{ order.date_placed.strftime('%Y-%m-%d %H:%M') }}</td>
                             <td>
                                 <form method="POST" action="{{ url_for('update_order_status', order_id=order.id) }}" style="display: inline;">
@@ -443,9 +443,43 @@
             sel.addEventListener('change', async function(){
                 const code = sel.value;
                 try{
-                    await fetch(`/set_currency/${code}`, { method: 'GET' });
-                }catch(e){/* ignore */}
-                window.location.reload();
+                    // set session currency via AJAX
+                    await fetch(`/set_currency/${code}?ajax=1`, { method: 'GET' });
+
+                    // fetch updated pricing data for admin UI
+                    const resp = await fetch('/admin/pricing_data');
+                    if (!resp.ok) {
+                        throw new Error('Failed to fetch pricing data');
+                    }
+                    const data = await resp.json();
+
+                    // update stats
+                    if (data.stats && data.stats.total_sales_display) {
+                        const el = document.getElementById('stats-total-sales');
+                        if (el) el.textContent = data.stats.total_sales_display;
+                    }
+
+                    // update product prices
+                    if (Array.isArray(data.products)) {
+                        data.products.forEach(p => {
+                            const cell = document.querySelector(`.product-price[data-product-id="${p.id}"]`);
+                            if (cell) cell.textContent = p.price_display;
+                        });
+                    }
+
+                    // update order totals
+                    if (Array.isArray(data.orders)) {
+                        data.orders.forEach(o => {
+                            const cell = document.querySelector(`.order-total[data-order-id="${o.id}"]`);
+                            if (cell) cell.textContent = o.total_display;
+                        });
+                    }
+
+                }catch(e){
+                    console.error(e);
+                    // fallback to reload on error
+                    window.location.reload();
+                }
             });
         });
     </script>
