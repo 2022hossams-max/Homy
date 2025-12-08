@@ -322,6 +322,19 @@ def get_products():
         result.append(d)
     return jsonify(result)
 
+
+@app.route('/api/product/<int:product_id>')
+def get_product(product_id):
+    product = Product.query.get_or_404(product_id)
+    d = product.to_dict()
+    try:
+        d['price'] = format_price(product.price)
+        d['price_raw'] = product.price
+    except Exception:
+        d['price'] = product.price
+        d['price_raw'] = product.price
+    return jsonify(d)
+
 # ===== مسارات التقييمات =====
 
 @app.route('/review/submit/<int:product_id>', methods=['POST'])

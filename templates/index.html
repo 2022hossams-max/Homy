@@ -62,9 +62,23 @@
             sel.addEventListener('change', async function(){
                 const code = sel.value;
                 try{
-                    await fetch(`/set_currency/${code}`, { method: 'GET' });
-                }catch(e){/* ignore */}
-                window.location.reload();
+                    // set currency via AJAX
+                    await fetch(`/set_currency/${code}?ajax=1`, { method: 'GET' });
+                    // refresh products shown on the page
+                    const activeFilter = document.querySelector('.filter-btn.active');
+                    const categoryId = activeFilter ? activeFilter.dataset.id : '';
+                    const searchTerm = document.getElementById('search-input').value || '';
+                    // fetchProducts is defined in app.js and will re-render prices
+                    if (typeof fetchProducts === 'function') {
+                        fetchProducts(categoryId, searchTerm);
+                    } else {
+                        // fallback reload
+                        window.location.reload();
+                    }
+                }catch(e){
+                    console.error(e);
+                    window.location.reload();
+                }
             });
         });
     </script>

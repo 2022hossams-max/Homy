@@ -49,7 +49,7 @@
             
             <div class="product-info">
                 <h2>{{ product.name }}</h2>
-                <p class="price-large">السعر: <strong>{{ format_price(product.price) }}</strong></p>
+                <p class="price-large">السعر: <strong id="product-price">{{ format_price(product.price) }}</strong></p>
                 
                 <div class="rating-display">
                     <span class="rating-stars">
@@ -145,6 +145,34 @@
                 const data = await response.json();
                 
                 if (response.ok) {
+            <script>
+                document.addEventListener('DOMContentLoaded', function(){
+                    const sel = document.getElementById('currency-select-p');
+                    if(!sel) return;
+                    sel.addEventListener('change', async function(){
+                        const code = sel.value;
+                        try{
+                            await fetch(`/set_currency/${code}?ajax=1`, { method: 'GET' });
+                            // fetch updated product data
+                            const resp = await fetch(`/api/product/${{ product.id }}`);
+                            if (resp.ok) {
+                                const data = await resp.json();
+                                const priceEl = document.getElementById('product-price');
+                                if (priceEl && data.price) {
+                                    priceEl.textContent = data.price;
+                                } else {
+                                    window.location.reload();
+                                }
+                            } else {
+                                window.location.reload();
+                            }
+                        }catch(e){
+                            console.error(e);
+                            window.location.reload();
+                        }
+                    });
+                });
+            </script>
                     alert(data.message);
                     // يمكنك تحديث عداد السلة هنا إذا كان موجوداً في هذه الصفحة
                 } else {
