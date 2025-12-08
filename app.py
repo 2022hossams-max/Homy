@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import or_, func
 import os
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # ===== إعدادات التطبيق =====
 ADMIN_USERNAME_DEFAULT = 'hossam_admin'
@@ -54,10 +55,29 @@ class AdminUser(db.Model):
     is_active = db.Column(db.Boolean, default=True)
 
     def verify_password(self, password):
-        return self.password_hash == password
+        # First, try the standard hashed password verification
+        try:
+            if check_password_hash(self.password_hash, password):
+                return True
+        except Exception:
+            pass
+
+        # Migration fallback: if the stored value is plain text, accept it and upgrade to hashed
+        if self.password_hash == password:
+            try:
+                # upgrade stored password to hashed form
+                self.set_password(password)
+                db.session.add(self)
+                db.session.commit()
+            except Exception:
+                pass
+            return True
+
+        return False
 
     def set_password(self, password):
-        self.password_hash = password
+        # store hashed password
+        self.password_hash = generate_password_hash(password)
 
 
 class AdminActivity(db.Model):
@@ -489,6 +509,7 @@ def checkout():
     if request.method == 'POST':
         name = request.form.get('name')
         email = request.form.get('email')
+        payment_method = request.form.get('payment_method', 'cod')
 
         new_order = Order(
             customer_name=name,
@@ -513,16 +534,47 @@ def checkout():
             
         db.session.commit()
 
+        # Handle post-order payment flow
+        if payment_method == 'online':
+            # mark pending payment and redirect to simulated processor
+            new_order.status = 'Pending Payment'
+            db.session.commit()
+            # clear cart for now (items stored in order)
+            session['cart'] = {}
+            session.modified = True
+            return redirect(url_for('process_payment', order_id=new_order.id), code=303)
+
+        # Cash on Delivery
+        new_order.status = 'COD'
+        db.session.commit()
+
         session['cart'] = {}
         session.modified = True
-        
-        return redirect(url_for('order_success', order_id=new_order.id))
+        return redirect(url_for('order_success', order_id=new_order.id), code=303)
 
     return render_template('checkout.html', cart_items=cart_items, total_price=total_price)
 
 
 @app.route('/order_success/<int:order_id>')
 def order_success(order_id):
+    return render_template('order_success.html', order_id=order_id)
+
+
+@app.route('/payment/process/<int:order_id>')
+def process_payment(order_id):
+    """محاكاة معالجة الدفع الإلكتروني.
+    هنا نقوم بعمل عملية وهمية: نضع حالة الطلب "Paid" ونحول المستخدم إلى صفحة النجاح.
+    """
+    order = Order.query.get_or_404(order_id)
+    # In real integration, here we'd call the payment gateway API and verify payment result.
+    order.status = 'Paid'
+    db.session.commit()
+    flash('تمت معالجة الدفع بنجاح.', 'success')
+    return redirect(url_for('payment_success', order_id=order_id), code=303)
+
+
+@app.route('/payment/success/<int:order_id>')
+def payment_success(order_id):
     return render_template('order_success.html', order_id=order_id)
 
 # ===== مسارات الإدارة والمصادقة =====

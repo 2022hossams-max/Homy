@@ -295,6 +295,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // تشغيل وظائف التهيئة والبدء في جلب البيانات
+    // expose some functions to window so inline templates can call them
+    window.fetchProducts = fetchProducts;
+    window.fetchCartAndRender = fetchCartAndRender;
+
     fetchInitialState();
     fetchProducts();
 });

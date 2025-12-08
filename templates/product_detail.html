@@ -143,38 +143,13 @@
             try {
                 const response = await fetch(`/cart/add/${productId}`);
                 const data = await response.json();
-                
+
                 if (response.ok) {
-            <script>
-                document.addEventListener('DOMContentLoaded', function(){
-                    const sel = document.getElementById('currency-select-p');
-                    if(!sel) return;
-                    sel.addEventListener('change', async function(){
-                        const code = sel.value;
-                        try{
-                            await fetch(`/set_currency/${code}?ajax=1`, { method: 'GET' });
-                            // fetch updated product data
-                            const resp = await fetch(`/api/product/${{ product.id }}`);
-                            if (resp.ok) {
-                                const data = await resp.json();
-                                const priceEl = document.getElementById('product-price');
-                                if (priceEl && data.price) {
-                                    priceEl.textContent = data.price;
-                                } else {
-                                    window.location.reload();
-                                }
-                            } else {
-                                window.location.reload();
-                            }
-                        }catch(e){
-                            console.error(e);
-                            window.location.reload();
-                        }
-                    });
-                });
-            </script>
                     alert(data.message);
-                    // يمكنك تحديث عداد السلة هنا إذا كان موجوداً في هذه الصفحة
+                    // حاول تحديث عداد السلة إن أمكن
+                    if (typeof window.fetchCartAndRender === 'function') {
+                        window.fetchCartAndRender();
+                    }
                 } else {
                     alert(`فشل الإضافة: ${data.message}`);
                 }
@@ -184,17 +159,34 @@
                 alert('فشل الاتصال بالخادم لإضافة المنتج.');
             }
         }
-    </script>
-    <script>
+
         document.addEventListener('DOMContentLoaded', function(){
             const sel = document.getElementById('currency-select-p');
             if(!sel) return;
             sel.addEventListener('change', async function(){
                 const code = sel.value;
                 try{
-                    await fetch(`/set_currency/${code}`, { method: 'GET' });
-                }catch(e){/* ignore */}
-                window.location.reload();
+                    // اطلب تغيير العملة عبر AJAX ثم جِب بيانات المنتج المحدثة
+                    await fetch(`/set_currency/${code}?ajax=1`, { method: 'GET' });
+                    const resp = await fetch(`/api/product/{{ product.id }}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        const priceEl = document.getElementById('product-price');
+                        if (priceEl && data.price) {
+                            priceEl.textContent = data.price;
+                        }
+                    }
+
+                    // حدّث تفاصيل السلة إن كانت ظاهرة
+                    if (typeof window.fetchCartAndRender === 'function') {
+                        window.fetchCartAndRender();
+                    }
+
+                }catch(e){
+                    console.error(e);
+                    // كحل احتياطي، أعد تحميل الصفحة
+                    window.location.reload();
+                }
             });
         });
     </script>

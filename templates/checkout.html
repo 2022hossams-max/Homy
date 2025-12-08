@@ -54,6 +54,10 @@
             
             <label for="email">البريد الإلكتروني:</label>
             <input type="email" id="email" name="email" required>
+
+            <h2 style="margin-top:20px;">طريقة الدفع</h2>
+            <label><input type="radio" name="payment_method" value="cod" checked> الدفع عند الاستلام (COD)</label>
+            <label><input type="radio" name="payment_method" value="online"> الدفع عبر الانترنت (محاكاة)</label>
             
             <button type="submit">تأكيد وشراء (${{ total_price | round(2) }})</button>
         </form>
