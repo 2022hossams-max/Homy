@@ -21,6 +21,20 @@ app.config['SECRET_KEY'] = 'your_super_secret_key_12345'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# إعدادات العملات (قاعدة الأسعار مخزنة افتراضياً بوحدة USD)
+app.config['CURRENCY_RATES'] = {
+    'USD': 1.0,
+    'SAR': 3.75
+}
+app.config['CURRENCY_SYMBOLS'] = {
+    'USD': '$',
+    'SAR': 'ر.س'
+}
+app.config['CURRENCY_POSITION'] = {
+    'USD': 'prefix',
+    'SAR': 'suffix'
+}
+app.config['DEFAULT_CURRENCY'] = 'USD'
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
@@ -150,6 +164,43 @@ def handle_image_upload(file):
     return '/static/placeholder.png'
 
 
+def get_current_currency():
+    return session.get('currency', app.config.get('DEFAULT_CURRENCY', 'USD'))
+
+
+def convert_price(amount, to_currency):
+    try:
+        rate = app.config['CURRENCY_RATES'].get(to_currency, 1.0)
+    except Exception:
+        rate = 1.0
+    return amount * rate
+
+
+def format_price(amount):
+    cur = get_current_currency()
+    converted = convert_price(amount, cur)
+    symbol = app.config['CURRENCY_SYMBOLS'].get(cur, '')
+    pos = app.config['CURRENCY_POSITION'].get(cur, 'prefix')
+    if pos == 'prefix':
+        return f"{symbol}{converted:.2f}"
+    return f"{converted:.2f} {symbol}"
+
+
+@app.context_processor
+def inject_currency_helpers():
+    return {
+        'format_price': format_price,
+        'current_currency': get_current_currency
+    }
+
+
+@app.route('/set_currency/<currency_code>')
+def set_currency(currency_code):
+    if currency_code in app.config.get('CURRENCY_RATES', {}):
+        session['currency'] = currency_code
+    return redirect(request.referrer or url_for('home'))
+
+
 def get_cart_details():
     """يحصل على تفاصيل سلة المشتريات من الجلسة."""
     if 'cart' not in session:
@@ -216,7 +267,18 @@ def get_products():
         products_query = products_query.filter_by(category_id=int(category_id))
 
     products = products_query.all()
-    return jsonify([p.to_dict() for p in products])
+    result = []
+    for p in products:
+        d = p.to_dict()
+        # include both raw price and formatted price according to session currency
+        try:
+            d['price_raw'] = p.price
+            d['price'] = format_price(p.price)
+        except Exception:
+            d['price_raw'] = p.price
+            d['price'] = p.price
+        result.append(d)
+    return jsonify(result)
 
 # ===== مسارات التقييمات =====
 
@@ -332,9 +394,24 @@ def add_to_cart(product_id):
 @app.route('/cart')
 def view_cart():
     cart_items, total_price = get_cart_details()
+    # أضف تمثيلات الأسعار المحوّلة/المنسقة لكل عنصر وإجمالي السلة
+    for it in cart_items:
+        try:
+            it['price_display'] = format_price(it.get('price', 0))
+            it['item_total_display'] = format_price(it.get('item_total', 0))
+        except Exception:
+            it['price_display'] = it.get('price', 0)
+            it['item_total_display'] = it.get('item_total', 0)
+
+    try:
+        total_display = format_price(total_price)
+    except Exception:
+        total_display = total_price
+
     return jsonify({
         'items': cart_items,
         'total': total_price,
+        'total_display': total_display,
         'count': sum(session.get('cart', {}).values())
     })
 

@@ -15,6 +15,10 @@
             <button id="view-cart-btn">🛒 سلة المشتريات (<span id="cart-count">0</span>)</button>
             
             <a href="{{ url_for('admin_login') }}" class="admin-link">لوحة الإدارة</a>
+            <span style="margin-left:10px;">
+                <a href="{{ url_for('set_currency', currency_code='USD') }}">USD</a> |
+                <a href="{{ url_for('set_currency', currency_code='SAR') }}">ريال</a>
+            </span>
         </div>
     </header>
     

@@ -34,6 +34,10 @@
     <header>
         <h1>{{ product.name }}</h1>
         <a href="{{ url_for('home') }}" class="admin-link">العودة للمتجر</a>
+        <span style="margin-left:12px;">
+            <a href="{{ url_for('set_currency', currency_code='USD') }}">USD</a> |
+            <a href="{{ url_for('set_currency', currency_code='SAR') }}">ريال</a>
+        </span>
     </header>
 
     <main>
@@ -42,7 +46,7 @@
             
             <div class="product-info">
                 <h2>{{ product.name }}</h2>
-                <p class="price-large">السعر: <strong>${{ product.price | round(2) }}</strong></p>
+                <p class="price-large">السعر: <strong>{{ format_price(product.price) }}</strong></p>
                 
                 <div class="rating-display">
                     <span class="rating-stars">

@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </a>
                 <h3><a href="/product/${product.id}">${product.name}</a></h3>
                 <p style="font-size: 0.9em; color: #6c757d;">الفئة: ${product.category_name}</p>
-                <p><strong>السعر: $${product.price.toFixed(2)}</strong></p>
+                <p><strong>السعر: ${product.price}</strong></p>
                 <p style="font-size: 0.9em;">
                     ${product.stock > 0 ? `متوفر: ${product.stock}` : 'نفد المخزون'}
                 </p>
@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             cartCountElement.textContent = cartData.count;
 
-            cartItemsList.innerHTML = '';
+                cartItemsList.innerHTML = '';
             if (items.length === 0) {
                 cartItemsList.innerHTML = '<p>سلة المشتريات فارغة.</p>';
                 cartTotalElement.textContent = '$0.00';
@@ -143,14 +143,15 @@ document.addEventListener('DOMContentLoaded', () => {
             items.forEach(item => {
                 const itemDiv = document.createElement('div');
                 itemDiv.className = 'cart-item';
+                const itemTotalDisplay = item.item_total_display || (item.item_total ? `$${item.item_total.toFixed(2)}` : '$0.00');
                 itemDiv.innerHTML = `
                     <span>${item.name} (x${item.quantity})</span>
-                    <span>$${item.item_total.toFixed(2)}</span>
+                    <span>${itemTotalDisplay}</span>
                     `;
                 cartItemsList.appendChild(itemDiv);
             });
 
-            cartTotalElement.textContent = `$${total.toFixed(2)}`;
+            cartTotalElement.textContent = (cartData.total_display || (total ? `$${total.toFixed(2)}` : '$0.00'));
 
         } catch (error) {
             console.error('Error fetching cart:', error);
