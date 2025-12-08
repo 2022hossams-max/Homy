@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <title>إدارة المشرفين</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h2>إدارة المشرفين</h2>
+    <a href="/admin">عودة لصفحة المشرف</a>
+    <hr>
+    <form method="post" action="/add_admin">
+        <label>اسم المستخدم:</label>
+        <input type="text" name="username" required>
+        <label>كلمة المرور:</label>
+        <input type="password" name="password" required>
+        <br>
+        <label>الصلاحيات:</label><br>
+        <input type="checkbox" name="can_manage_products" value="1"> إدارة المنتجات<br>
+        <input type="checkbox" name="can_manage_orders" value="1"> إدارة الطلبات<br>
+        <input type="checkbox" name="can_manage_reviews" value="1"> إدارة التقييمات<br>
+        <input type="checkbox" name="can_manage_admins" value="1"> إدارة المشرفين<br>
+        <button type="submit">إضافة مشرف</button>
+    </form>
+    <hr>
+    <h3>قائمة المشرفين</h3>
+    <ul>
+        {% for admin in admins %}
+        <li>
+            <b>{{ admin.username }}</b>
+            <span> | صلاحيات: 
+                {% if admin.can_manage_products %} منتجات {% endif %}
+                {% if admin.can_manage_orders %} طلبات {% endif %}
+                {% if admin.can_manage_reviews %} تقييمات {% endif %}
+                {% if admin.can_manage_admins %} مشرفين {% endif %}
+            </span>
+            <span style="margin-right:10px; color:{{ 'green' if admin.is_active else 'red' }};">
+                {% if admin.is_active %}مفعل{% else %}معطل{% endif %}
+            </span>
+            <form method="post" action="/toggle_admin_active" style="display:inline">
+                <input type="hidden" name="admin_id" value="{{ admin.id }}">
+                <button type="submit">{% if admin.is_active %}تعطيل{% else %}تفعيل{% endif %}</button>
+            </form>
+            <form method="post" action="/delete_admin" style="display:inline">
+                <input type="hidden" name="admin_id" value="{{ admin.id }}">
+                <button type="submit">حذف</button>
+            </form>
+            <form method="post" action="/update_admin_permissions" style="display:inline">
+                <input type="hidden" name="admin_id" value="{{ admin.id }}">
+                <button type="submit">تعديل الصلاحيات</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+
+    <hr>
+    <h3>سجل النشاطات الإدارية</h3>
+    {% set f = filters if filters is defined else {} %}
+    {% set p = pagination if pagination is defined else {'has_prev': False, 'has_next': False, 'page': 1} %}
+
+    <form method="get" action="{{ url_for('manage_admins') }}">
+        <label>المشرف:</label>
+        <select name="admin_id">
+            <option value="">كل المشرفين</option>
+            {% for a in admins %}
+                <option value="{{ a.id }}" {% if f.get('admin_id','') == (a.id|string) %}selected{% endif %}>{{ a.username }}</option>
+            {% endfor %}
+        </select>
+        <label>نص الفعل:</label>
+        <input type="text" name="action" value="{{ f.get('action','') }}">
+        <label>من تاريخ:</label>
+        <input type="date" name="date_from" value="{{ f.get('date_from','') }}">
+        <label>إلى تاريخ:</label>
+        <input type="date" name="date_to" value="{{ f.get('date_to','') }}">
+        <button type="submit">فلتر</button>
+        <a href="{{ url_for('manage_admins_export') }}?admin_id={{ f.get('admin_id','') }}&action={{ f.get('action','') }}&date_from={{ f.get('date_from','') }}&date_to={{ f.get('date_to','') }}">تصدير CSV</a>
+    </form>
+
+    <ul>
+        {% for activity in activities %}
+        <li>
+            <b>{{ activity.timestamp.strftime('%Y-%m-%d %H:%M') }}</b> - 
+            <span>المشرف: {{ activity.admin_name }}</span> - 
+            <span>{{ activity.action }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+
+    <div>
+        {% if p.has_prev %}
+            <a href="?page={{ p.page -1 }}&admin_id={{ f.get('admin_id','') }}&action={{ f.get('action','') }}&date_from={{ f.get('date_from','') }}&date_to={{ f.get('date_to','') }}">السابق</a>
+        {% endif %}
+        <span>صفحة {{ p.page }}</span>
+        {% if p.has_next %}
+            <a href="?page={{ p.page +1 }}&admin_id={{ f.get('admin_id','') }}&action={{ f.get('action','') }}&date_from={{ f.get('date_from','') }}&date_to={{ f.get('date_to','') }}">التالي</a>
+        {% endif %}
+    </div>
+</body>
+</html>

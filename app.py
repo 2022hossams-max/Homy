@@ -1,79 +1,102 @@
 from flask import Flask, jsonify, render_template, request, session, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from datetime import datetime
 from sqlalchemy import or_, func
-import os 
-from werkzeug.utils import secure_filename 
+import os
+from werkzeug.utils import secure_filename
 
-# --- إعدادات التطبيق ---
-ADMIN_USERNAME_DEFAULT = 'hossam_admin' # المشرف الافتراضي
-ADMIN_PASSWORD_DEFAULT = 'strong_password123' 
-LOW_STOCK_THRESHOLD = 5 # حد تنبيه المخزون المنخفض
-# ------------------------
+# ===== إعدادات التطبيق =====
+ADMIN_USERNAME_DEFAULT = 'hossam_admin'
+ADMIN_PASSWORD_DEFAULT = 'strong_password123'
+LOW_STOCK_THRESHOLD = 5
 
 # إعدادات رفع الملفات
-UPLOAD_FOLDER = 'static/product_images' 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'} 
+UPLOAD_FOLDER = 'static/product_images'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
+# ===== تكوين Flask و SQLAlchemy =====
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_super_secret_key_12345' 
+app.config['SECRET_KEY'] = 'your_super_secret_key_12345'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
-# --- وظائف مساعدة لرفع الملفات ---
-
-def allowed_file(filename):
-    """التحقق من أن الامتداد مسموح به."""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def handle_image_upload(file):
-    """حفظ ملف الصورة وإرجاع مساره النسبي."""
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        
-        if not os.path.exists(app.config['UPLOAD_FOLDER']):
-            os.makedirs(app.config['UPLOAD_FOLDER'])
-            
-        file.save(filepath)
-        
-        return '/' + filepath.replace('\\', '/') 
-    
-    return '/static/placeholder.png' 
-
-# --- نماذج قاعدة البيانات (Models) ---
+# ===== نماذج قاعدة البيانات =====
 
 class AdminUser(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    # ملاحظة: تم استخدام تخزين نصي لكلمة المرور لتبسيط المثال، يفضل استخدام التجزئة (Hashing) في الإنتاج.
-    password_hash = db.Column(db.String(128), nullable=False) 
-
-    # حقول الصلاحيات
+    password_hash = db.Column(db.String(128), nullable=False)
+    
+    # الصلاحيات
     can_manage_products = db.Column(db.Boolean, default=False)
     can_manage_orders = db.Column(db.Boolean, default=False)
     can_manage_reviews = db.Column(db.Boolean, default=False)
-    can_manage_admins = db.Column(db.Boolean, default=False) # صلاحية إدارة المشرفين (أعلى صلاحية)
+    can_manage_admins = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=True)
 
     def verify_password(self, password):
-        return self.password_hash == password 
+        return self.password_hash == password
 
     def set_password(self, password):
         self.password_hash = password
+
+
+class AdminActivity(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey('admin_user.id'), nullable=False)
+    action = db.Column(db.String(255), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
     products = db.relationship('Product', backref='category', lazy=True)
 
+
+class Product(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    price = db.Column(db.Float, nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    stock = db.Column(db.Integer, default=0)
+    image_url = db.Column(db.String(200), default='/static/placeholder.png')
+    category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
+    reviews = db.relationship('Review', backref='product', lazy='dynamic')
+
+    def get_rating_info(self):
+        avg_rating_result = db.session.query(func.avg(Review.rating)).filter(Review.product_id == self.id).scalar()
+        avg_rating = avg_rating_result if avg_rating_result is not None else 0
+        review_count = self.reviews.count()
+        
+        return {
+            'average': round(avg_rating, 2),
+            'count': review_count
+        }
+
+    def to_dict(self):
+        rating_info = self.get_rating_info()
+        return {
+            'id': self.id,
+            'name': self.name,
+            'price': self.price,
+            'description': self.description,
+            'stock': self.stock,
+            'image_url': self.image_url,
+            'category_name': self.category.name if self.category else 'N/A',
+            'rating': rating_info
+        }
+
+
 class Review(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
-    rating = db.Column(db.Integer, nullable=False) 
+    rating = db.Column(db.Integer, nullable=False)
     comment = db.Column(db.Text, nullable=True)
     reviewer_name = db.Column(db.String(100), default='Anonymous')
     date_posted = db.Column(db.DateTime, default=datetime.utcnow)
@@ -87,40 +110,6 @@ class Review(db.Model):
             'date_posted': self.date_posted.strftime('%Y-%m-%d')
         }
 
-class Product(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    price = db.Column(db.Float, nullable=False)
-    description = db.Column(db.Text, nullable=True)
-    stock = db.Column(db.Integer, default=0)
-    image_url = db.Column(db.String(200), default='/static/placeholder.png') 
-    category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
-    reviews = db.relationship('Review', backref='product', lazy='dynamic') 
-
-    def get_rating_info(self):
-        """حساب متوسط التقييم وعدد التقييمات"""
-        # جلب القيمة مباشرة أو استخدام 0 إذا لم تكن هناك تقييمات
-        avg_rating_result = db.session.query(func.avg(Review.rating)).filter(Review.product_id == self.id).scalar()
-        avg_rating = avg_rating_result if avg_rating_result is not None else 0
-        review_count = self.reviews.count()
-        
-        return {
-            'average': round(avg_rating, 2),
-            'count': review_count
-        }
-
-    def to_dict(self):
-        rating_info = self.get_rating_info() 
-        return {
-            'id': self.id,
-            'name': self.name,
-            'price': self.price,
-            'description': self.description,
-            'stock': self.stock,
-            'image_url': self.image_url,
-            'category_name': self.category.name if self.category else 'N/A',
-            'rating': rating_info
-        }
 
 class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -131,6 +120,7 @@ class Order(db.Model):
     status = db.Column(db.String(20), default='New')
     items = db.relationship('OrderItem', backref='order', lazy=True)
 
+
 class OrderItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     order_id = db.Column(db.Integer, db.ForeignKey('order.id'), nullable=False)
@@ -138,7 +128,27 @@ class OrderItem(db.Model):
     price = db.Column(db.Float, nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
 
-# --- وظائف مساعدة للسلة والمفضلة (Cart & Favorites Helpers) ---
+# ===== وظائف مساعدة =====
+
+def allowed_file(filename):
+    """التحقق من أن الامتداد مسموح به."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def handle_image_upload(file):
+    """حفظ ملف الصورة وإرجاع مساره النسبي."""
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        if not os.path.exists(app.config['UPLOAD_FOLDER']):
+            os.makedirs(app.config['UPLOAD_FOLDER'])
+            
+        file.save(filepath)
+        return '/' + filepath.replace('\\', '/')
+    
+    return '/static/placeholder.png'
+
 
 def get_cart_details():
     """يحصل على تفاصيل سلة المشتريات من الجلسة."""
@@ -163,6 +173,7 @@ def get_cart_details():
     
     return cart_items, total_price
 
+
 def get_favorites_details():
     """يحصل على تفاصيل المنتجات المفضلة من الجلسة."""
     favorites_ids = [int(id) for id in session.get('favorites', [])]
@@ -170,23 +181,44 @@ def get_favorites_details():
     
     return [p.to_dict() for p in favorite_products]
 
-# --- مسارات المتجر العام (Frontend Routes) ---
+# ===== مسارات المتجر العام =====
 
 @app.route('/')
 def home():
     categories = Category.query.all()
     favorites_count = len(session.get('favorites', []))
-    return render_template('index.html', categories=categories, favorites_count=favorites_count) 
+    return render_template('index.html', categories=categories, favorites_count=favorites_count)
+
 
 @app.route('/product/<int:product_id>')
 def product_detail(product_id):
     product = Product.query.get_or_404(product_id)
     reviews = Review.query.filter_by(product_id=product.id).order_by(Review.date_posted.desc()).all()
-    rating_info = product.get_rating_info() 
+    rating_info = product.get_rating_info()
     
     return render_template('product_detail.html', product=product, reviews=reviews, rating_info=rating_info)
 
-# --- مسارات التقييمات (Review Routes) ---
+
+@app.route('/api/products')
+def get_products():
+    query = request.args.get('query')
+    category_id = request.args.get('category_id')
+    
+    products_query = Product.query
+    
+    if query:
+        products_query = products_query.filter(or_(
+            Product.name.contains(query),
+            Product.description.contains(query)
+        ))
+    
+    if category_id and category_id.isdigit():
+        products_query = products_query.filter_by(category_id=int(category_id))
+
+    products = products_query.all()
+    return jsonify([p.to_dict() for p in products])
+
+# ===== مسارات التقييمات =====
 
 @app.route('/review/submit/<int:product_id>', methods=['POST'])
 def submit_review(product_id):
@@ -210,33 +242,43 @@ def submit_review(product_id):
     flash('تم إرسال تقييمك بنجاح!', 'success')
     return redirect(url_for('product_detail', product_id=product_id))
 
-# --- مسارات API (لجلب البيانات بواسطة JavaScript) ---
 
-@app.route('/api/products')
-def get_products():
-    query = request.args.get('query') 
-    category_id = request.args.get('category_id')
-    
-    products_query = Product.query
-    
-    if query:
-        products_query = products_query.filter(or_(
-            Product.name.contains(query),
-            Product.description.contains(query)
-        ))
-    
-    if category_id and category_id.isdigit():
-        products_query = products_query.filter_by(category_id=int(category_id))
+@app.route('/delete_review/<int:review_id>', methods=['POST'])
+def delete_review(review_id):
+    """مسار حذف التقييمات من لوحة المشرف."""
+    if session.get('permissions', {}).get('reviews') != True:
+        flash('ليس لديك صلاحية لإدارة التقييمات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
+    review = Review.query.get_or_404(review_id)
+    db.session.delete(review)
+    db.session.commit()
+    flash('تم حذف التقييم بنجاح.', 'success')
+    return redirect(url_for('admin_panel'))
 
-    products = products_query.all()
-    return jsonify([p.to_dict() for p in products])
 
-# --- مسارات المفضلة (Wishlist Routes) ---
+@app.route('/reset_product_reviews/<int:product_id>', methods=['POST'])
+def reset_product_reviews(product_id):
+    """مسار إعادة تعيين جميع التقييمات لمنتج محدد."""
+    if session.get('permissions', {}).get('reviews') != True:
+        flash('ليس لديك صلاحية لإدارة التقييمات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
+    product = Product.query.get_or_404(product_id)
+    
+    Review.query.filter_by(product_id=product_id).delete()
+    db.session.commit()
+    
+    flash(f'تمت إعادة تعيين جميع تقييمات المنتج {product.name} بنجاح.', 'warning')
+    return redirect(url_for('admin_panel'))
+
+# ===== مسارات المفضلة =====
 
 @app.route('/favorites')
 def favorites_view():
     favorite_products = get_favorites_details()
     return render_template('favorites.html', products=favorite_products)
+
 
 @app.route('/favorites/toggle/<int:product_id>')
 def toggle_favorite(product_id):
@@ -261,12 +303,12 @@ def toggle_favorite(product_id):
     session.modified = True
     
     return jsonify({
-        "message": message, 
+        "message": message,
         "count": len(session['favorites']),
         "is_added": is_added
     })
-    
-# --- مسارات السلة (Cart Routes) ---
+
+# ===== مسارات السلة =====
 
 @app.route('/cart/add/<int:product_id>')
 def add_to_cart(product_id):
@@ -283,8 +325,9 @@ def add_to_cart(product_id):
         
     cart[product_id_str] = current_quantity + 1
     session['cart'] = cart
-    session.modified = True 
+    session.modified = True
     return jsonify({"message": f"تمت إضافة {product.name} إلى السلة", "cart_count": sum(cart.values())})
+
 
 @app.route('/cart')
 def view_cart():
@@ -295,11 +338,13 @@ def view_cart():
         'count': sum(session.get('cart', {}).values())
     })
 
+
 @app.route('/cart/clear')
 def clear_cart():
     session['cart'] = {}
     session.modified = True
     return jsonify({"message": "تم تفريغ السلة بنجاح", "cart_count": 0})
+
 
 @app.route('/checkout', methods=['GET', 'POST'])
 def checkout():
@@ -322,7 +367,6 @@ def checkout():
         db.session.commit()
         
         for item in cart_items:
-            # تحديث المخزون (خصم الكمية)
             product = Product.query.get(item['product_id'])
             if product and product.stock >= item['quantity']:
                 product.stock -= item['quantity']
@@ -344,22 +388,22 @@ def checkout():
 
     return render_template('checkout.html', cart_items=cart_items, total_price=total_price)
 
+
 @app.route('/order_success/<int:order_id>')
 def order_success(order_id):
     return render_template('order_success.html', order_id=order_id)
 
-# --- مسارات الإدارة والمصادقة والصلاحيات (Admin & Auth Routes) ---
+# ===== مسارات الإدارة والمصادقة =====
 
 @app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login(): 
+def admin_login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
         
         user = AdminUser.query.filter_by(username=username).first()
         
-        # التحقق من كلمة المرور (مقارنة مباشرة، يجب استخدام التجزئة في الإنتاج)
-        if user and user.verify_password(password):
+        if user and user.verify_password(password) and user.is_active:
             session['admin_id'] = user.id
             session['username'] = user.username
             session['permissions'] = {
@@ -376,12 +420,14 @@ def admin_login():
             
     return render_template('admin_login.html')
 
+
 @app.route('/admin/logout')
 def admin_logout():
     session.pop('admin_id', None)
     session.pop('username', None)
     session.pop('permissions', None)
     return redirect(url_for('admin_login'))
+
 
 @app.route('/admin')
 def admin_panel():
@@ -390,138 +436,312 @@ def admin_panel():
         
     current_permissions = session.get('permissions', {})
     
-    # 1. جلب البيانات الرئيسية
     products = Product.query.all()
-    orders = Order.query.order_by(Order.date_placed.desc()).all() 
+    orders = Order.query.order_by(Order.date_placed.desc()).all()
     categories = Category.query.all()
     all_reviews = Review.query.order_by(Review.date_posted.desc()).all()
     
-    # 2. حساب الإحصائيات للوحة المعلومات
     total_sales_result = db.session.query(func.sum(Order.total_price)).filter_by(status='Delivered').scalar()
     total_sales = round(total_sales_result or 0, 2)
     new_orders_count = Order.query.filter_by(status='New').count()
-    low_stock_products = Product.query.filter(Product.stock <= LOW_STOCK_THRESHOLD).all() 
+    low_stock_products = Product.query.filter(Product.stock <= LOW_STOCK_THRESHOLD).all()
 
+    sales_labels = []
+    sales_data = []
+    for i in range(11, -1, -1):
+        month_date = datetime.now()
+        for _ in range(i):
+            if month_date.month == 1:
+                month_date = month_date.replace(year=month_date.year - 1, month=12)
+            else:
+                month_date = month_date.replace(month=month_date.month - 1)
+        month_str = month_date.strftime('%Y-%m')
+        sales_labels.append(month_str)
+        month_sales = db.session.query(func.sum(Order.total_price)).filter(
+            func.strftime('%Y-%m', Order.date_placed) == month_str,
+            Order.status == 'Delivered'
+        ).scalar() or 0
+        sales_data.append(round(month_sales, 2))
+    
     stats = {
         'total_sales': total_sales,
         'new_orders_count': new_orders_count,
-        'low_stock_count': len(low_stock_products)
+        'low_stock_count': len(low_stock_products),
+        'sales_labels': sales_labels,
+        'sales_data': sales_data
     }
     
-    # 3. جلب قائمة المشرفين (إذا كان للمشرف الحالي صلاحية إدارتهم)
     admin_users = AdminUser.query.all()
 
     return render_template(
-        'admin.html', 
-        products=products, 
-        orders=orders, 
+        'admin.html',
+        products=products,
+        orders=orders,
         categories=categories,
         all_reviews=all_reviews,
         stats=stats,
         low_stock_products=low_stock_products,
-        admin_users=admin_users, 
-        permissions=current_permissions 
-    ) 
+        admin_users=admin_users,
+        permissions=current_permissions
+    )
 
-@app.route('/admin/add', methods=['POST'])
+
+@app.route('/manage_admins', methods=['GET'])
+def manage_admins():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    current_admin = AdminUser.query.get(session['admin_id'])
+    if not current_admin or not current_admin.can_manage_admins:
+        flash('ليس لديك صلاحية إدارة المشرفين', 'danger')
+        return redirect(url_for('admin_panel'))
+    admins = AdminUser.query.all()
+    activities_raw = AdminActivity.query.order_by(AdminActivity.timestamp.desc()).limit(20).all()
+    activities = []
+    for act in activities_raw:
+        admin = AdminUser.query.get(act.admin_id)
+        activities.append({
+            'timestamp': act.timestamp,
+            'admin_name': admin.username if admin else f'ID {act.admin_id}',
+            'action': act.action
+        })
+    return render_template('manage_admins.html', admins=admins, activities=activities)
+
+
+@app.route('/add_admin', methods=['POST'])
 def add_admin():
-    """مسار إضافة مشرف جديد."""
-    if session.get('permissions', {}).get('admins') != True:
-        flash('ليس لديك صلاحية لإضافة مشرفين.', 'error')
-        return redirect(url_for('admin_panel'))
-
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    current_admin = AdminUser.query.get(session['admin_id'])
+    if not current_admin or not current_admin.can_manage_admins:
+        flash('ليس لديك صلاحية إضافة مشرفين', 'danger')
+        return redirect(url_for('manage_admins'))
     username = request.form.get('username')
-    password = request.form.get('password')
-    
-    if AdminUser.query.filter_by(username=username).first():
-        flash('اسم المشرف هذا موجود بالفعل.', 'error')
-        return redirect(url_for('admin_panel'))
-    
-    if not password:
-        flash('يجب توفير كلمة مرور.', 'error')
-        return redirect(url_for('admin_panel'))
+    admins = AdminUser.query.order_by(AdminUser.username).all()
 
-    new_admin = AdminUser(username=username)
-    new_admin.set_password(password)
-    
-    # تعيين الصلاحيات الأولية
-    new_admin.can_manage_products = 'products' in request.form
-    new_admin.can_manage_orders = 'orders' in request.form
-    new_admin.can_manage_reviews = 'reviews' in request.form
-    new_admin.can_manage_admins = 'admins' in request.form 
+    # فلترة النشاطات عبر معلمات GET
+    q = AdminActivity.query
+    admin_filter = request.args.get('admin_id')
+    action_filter = request.args.get('action')
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    try:
+        page = int(request.args.get('page', 1))
+    except ValueError:
+        page = 1
+    per_page = 20
 
+    if admin_filter:
+        try:
+            q = q.filter(AdminActivity.admin_id == int(admin_filter))
+        except ValueError:
+            pass
+    if action_filter:
+        q = q.filter(AdminActivity.action.ilike(f"%{action_filter}%"))
+    if date_from:
+        try:
+            dt_from = datetime.fromisoformat(date_from)
+            q = q.filter(AdminActivity.timestamp >= dt_from)
+        except Exception:
+            pass
+    if date_to:
+        try:
+            dt_to = datetime.fromisoformat(date_to)
+            q = q.filter(AdminActivity.timestamp <= dt_to)
+        except Exception:
+            pass
+
+    total_count = q.count()
+    offset = (page - 1) * per_page
+    activities_raw = q.order_by(AdminActivity.timestamp.desc()).offset(offset).limit(per_page).all()
+
+    activities = []
+    for act in activities_raw:
+        admin = AdminUser.query.get(act.admin_id)
+        activities.append({
+            'timestamp': act.timestamp,
+            'admin_name': admin.username if admin else f'ID {act.admin_id}',
+            'action': act.action
+        })
+
+    has_next = offset + per_page < total_count
+    has_prev = page > 1
+
+    return render_template('manage_admins.html', admins=admins, activities=activities,
+                           filters={'admin_id': admin_filter or '', 'action': action_filter or '',
+                                    'date_from': date_from or '', 'date_to': date_to or '',
+                                    'page': page},
+                           pagination={'has_next': has_next, 'has_prev': has_prev, 'page': page})
+
+
+@app.route('/manage_admins/export')
+def manage_admins_export():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    current_admin = AdminUser.query.get(session['admin_id'])
+    if not current_admin or not current_admin.can_manage_admins:
+        flash('ليس لديك صلاحية تصدير سجلات المشرفين', 'danger')
+        return redirect(url_for('manage_admins'))
+
+    q = AdminActivity.query
+    admin_filter = request.args.get('admin_id')
+    action_filter = request.args.get('action')
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+
+    if admin_filter:
+        try:
+            q = q.filter(AdminActivity.admin_id == int(admin_filter))
+        except ValueError:
+            pass
+    if action_filter:
+        q = q.filter(AdminActivity.action.ilike(f"%{action_filter}%"))
+    if date_from:
+        try:
+            dt_from = datetime.fromisoformat(date_from)
+            q = q.filter(AdminActivity.timestamp >= dt_from)
+        except Exception:
+            pass
+    if date_to:
+        try:
+            dt_to = datetime.fromisoformat(date_to)
+            q = q.filter(AdminActivity.timestamp <= dt_to)
+        except Exception:
+            pass
+
+    activities = q.order_by(AdminActivity.timestamp.desc()).all()
+
+    import io, csv
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['timestamp', 'admin', 'action'])
+    for act in activities:
+        admin = AdminUser.query.get(act.admin_id)
+        writer.writerow([act.timestamp.isoformat(), admin.username if admin else act.admin_id, act.action])
+
+    resp = app.response_class(output.getvalue(), mimetype='text/csv')
+    resp.headers['Content-Disposition'] = 'attachment; filename=admin_activities.csv'
+    return resp
+    new_admin = AdminUser(
+        username=username,
+        password_hash=password,
+        can_manage_products=can_manage_products,
+        can_manage_orders=can_manage_orders,
+        can_manage_reviews=can_manage_reviews,
+        can_manage_admins=can_manage_admins
+    )
     db.session.add(new_admin)
     db.session.commit()
-    flash(f'تم إضافة المشرف {username} بنجاح.', 'success')
-    return redirect(url_for('admin_panel'))
+    flash('تمت إضافة المشرف بنجاح', 'success')
+    return redirect(url_for('manage_admins'))
 
-@app.route('/admin/permission/toggle/<int:user_id>/<string:permission_type>', methods=['POST'])
-def toggle_admin_permission(user_id, permission_type):
-    """مسار تحديث صلاحيات المشرفين عبر AJAX."""
-    if session.get('permissions', {}).get('admins') != True:
-        return jsonify({"message": "ليس لديك صلاحية."}), 403
-        
-    admin_to_edit = AdminUser.query.get_or_404(user_id)
-    
-    # حماية ضد تغيير المشرف لصلاحياته الخاصة
-    if admin_to_edit.id == session.get('admin_id'):
-        return jsonify({"message": "لا يمكنك تعديل صلاحياتك الخاصة."}), 400
 
-    # تحديث حقل الصلاحية المعني
-    permission_map = {
-        'products': 'can_manage_products',
-        'orders': 'can_manage_orders',
-        'reviews': 'can_manage_reviews',
-        'admins': 'can_manage_admins'
-    }
-    
-    if permission_type in permission_map:
-        perm_attribute = permission_map[permission_type]
-        current_state = getattr(admin_to_edit, perm_attribute)
-        setattr(admin_to_edit, perm_attribute, not current_state)
-        db.session.commit()
-        
-        new_state = getattr(admin_to_edit, perm_attribute)
-        return jsonify({
-            "message": f"تم تحديث صلاحية {permission_type} للمشرف {admin_to_edit.username}", 
-            "new_state": new_state
-        })
-    else:
-        return jsonify({"message": "نوع صلاحية غير معروف."}), 400
+@app.route('/update_admin_permissions', methods=['POST'])
+def update_admin_permissions():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    current_admin = AdminUser.query.get(session['admin_id'])
+    if not current_admin or not current_admin.can_manage_admins:
+        flash('ليس لديك صلاحية تعديل صلاحيات المشرفين', 'danger')
+        return redirect(url_for('manage_admins'))
+    admin_id = request.form.get('admin_id')
+    admin = AdminUser.query.get(admin_id)
+    if not admin:
+        flash('المشرف غير موجود', 'warning')
+        return redirect(url_for('manage_admins'))
+    return render_template('edit_admin_permissions.html', admin=admin)
 
-@app.route('/delete_review/<int:review_id>', methods=['POST'])
-def delete_review(review_id):
-    """مسار حذف التقييمات من لوحة المشرف."""
-    if session.get('permissions', {}).get('reviews') != True: 
-        flash('ليس لديك صلاحية لإدارة التقييمات.', 'error')
-        return redirect(url_for('admin_panel'))
-        
-    review = Review.query.get_or_404(review_id)
-    db.session.delete(review)
+
+@app.route('/save_admin_permissions', methods=['POST'])
+def save_admin_permissions():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    current_admin = AdminUser.query.get(session['admin_id'])
+    if not current_admin or not current_admin.can_manage_admins:
+        flash('ليس لديك صلاحية تعديل صلاحيات المشرفين', 'danger')
+        return redirect(url_for('manage_admins'))
+    admin_id = request.form.get('admin_id')
+    admin = AdminUser.query.get(admin_id)
+    if not admin:
+        flash('المشرف غير موجود', 'warning')
+        return redirect(url_for('manage_admins'))
+    admin.can_manage_products = bool(request.form.get('can_manage_products'))
+    admin.can_manage_orders = bool(request.form.get('can_manage_orders'))
+    admin.can_manage_reviews = bool(request.form.get('can_manage_reviews'))
+    admin.can_manage_admins = bool(request.form.get('can_manage_admins'))
     db.session.commit()
-    flash('تم حذف التقييم بنجاح.', 'success')
-    return redirect(url_for('admin_panel'))
+    flash('تم تحديث الصلاحيات بنجاح', 'success')
+    return redirect(url_for('manage_admins'))
 
-@app.route('/reset_product_reviews/<int:product_id>', methods=['POST'])
-def reset_product_reviews(product_id):
-    """مسار إعادة تعيين جميع التقييمات لمنتج محدد."""
-    if session.get('permissions', {}).get('reviews') != True: 
-        flash('ليس لديك صلاحية لإدارة التقييمات.', 'error')
-        return redirect(url_for('admin_panel'))
-        
-    product = Product.query.get_or_404(product_id)
-    
-    Review.query.filter_by(product_id=product_id).delete()
+
+@app.route('/delete_admin', methods=['POST'])
+def delete_admin():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    current_admin = AdminUser.query.get(session['admin_id'])
+    if not current_admin or not current_admin.can_manage_admins:
+        flash('ليس لديك صلاحية حذف المشرفين', 'danger')
+        return redirect(url_for('manage_admins'))
+    admin_id = request.form.get('admin_id')
+    admin = AdminUser.query.get(admin_id)
+    if not admin:
+        flash('المشرف غير موجود', 'warning')
+        return redirect(url_for('manage_admins'))
+    if admin.id == current_admin.id:
+        flash('لا يمكنك حذف نفسك!', 'danger')
+        return redirect(url_for('manage_admins'))
+    db.session.delete(admin)
     db.session.commit()
-    
-    flash(f'تمت إعادة تعيين جميع تقييمات المنتج {product.name} بنجاح.', 'warning')
+    flash('تم حذف المشرف بنجاح', 'success')
+    return redirect(url_for('manage_admins'))
+
+
+@app.route('/toggle_admin_active', methods=['POST'])
+def toggle_admin_active():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    current_admin = AdminUser.query.get(session['admin_id'])
+    if not current_admin or not current_admin.can_manage_admins:
+        flash('ليس لديك صلاحية تغيير حالة المشرفين', 'danger')
+        return redirect(url_for('manage_admins'))
+    admin_id = request.form.get('admin_id')
+    admin = AdminUser.query.get(admin_id)
+    if not admin:
+        flash('المشرف غير موجود', 'warning')
+        return redirect(url_for('manage_admins'))
+    admin.is_active = not admin.is_active
+    db.session.commit()
+    flash(f"تم تغيير حالة المشرف {admin.username} إلى {'مفعل' if admin.is_active else 'معطل'}", 'info')
+    return redirect(url_for('manage_admins'))
+
+
+@app.route('/change_admin_password', methods=['POST'])
+def change_admin_password():
+    if 'admin_id' not in session:
+        return redirect(url_for('admin_login'))
+    admin = AdminUser.query.get(session['admin_id'])
+    old_password = request.form.get('old_password')
+    new_password = request.form.get('new_password')
+    confirm_password = request.form.get('confirm_password')
+    if not admin.verify_password(old_password):
+        flash('كلمة المرور الحالية غير صحيحة', 'danger')
+        return redirect(url_for('admin_panel'))
+    if new_password != confirm_password:
+        flash('كلمة المرور الجديدة غير متطابقة', 'warning')
+        return redirect(url_for('admin_panel'))
+    if len(new_password) < 6:
+        flash('كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل', 'warning')
+        return redirect(url_for('admin_panel'))
+    admin.set_password(new_password)
+    db.session.commit()
+    flash('تم تغيير كلمة المرور بنجاح', 'success')
     return redirect(url_for('admin_panel'))
 
+# ===== مسارات إدارة المنتجات =====
 
 @app.route('/add_product', methods=['POST'])
 def add_product():
     """مسار إضافة منتج جديد."""
-    if session.get('permissions', {}).get('products') != True: 
+    if session.get('permissions', {}).get('products') != True:
         flash('ليس لديك صلاحية لإدارة المنتجات.', 'error')
         return redirect(url_for('admin_panel'))
     
@@ -531,8 +751,8 @@ def add_product():
     stock = request.form.get('stock')
     category_id = request.form.get('category_id')
 
-    image_file = request.files.get('image_file') 
-    image_url = '/static/placeholder.png' 
+    image_file = request.files.get('image_file')
+    image_url = '/static/placeholder.png'
     
     if image_file and image_file.filename != '':
         image_url = handle_image_upload(image_file)
@@ -547,12 +767,12 @@ def add_product():
             price=float(price),
             description=description,
             stock=int(stock),
-            image_url=image_url, 
+            image_url=image_url,
             category_id=int(category_id)
         )
         db.session.add(new_product)
         db.session.commit()
-        flash(f'تمت إضافة المنتج {name} بنجاح!', 'success')
+        flash(f'✅ تم إضافة المنتج {name} بنجاح! (إشعار إداري)', 'info')
         return redirect(url_for('admin_panel'))
     except ValueError:
         flash('خطأ: يجب أن يكون السعر ورصيد المخزون أرقاماً صحيحة!', 'error')
@@ -562,7 +782,7 @@ def add_product():
 @app.route('/edit_product/<int:product_id>', methods=['GET', 'POST'])
 def edit_product(product_id):
     """مسار تعديل منتج موجود."""
-    if session.get('permissions', {}).get('products') != True: 
+    if session.get('permissions', {}).get('products') != True:
         flash('ليس لديك صلاحية لإدارة المنتجات.', 'error')
         return redirect(url_for('admin_panel'))
         
@@ -572,7 +792,7 @@ def edit_product(product_id):
     if request.method == 'POST':
         try:
             image_file = request.files.get('image_file')
-            image_url = product.image_url 
+            image_url = product.image_url
 
             if image_file and image_file.filename != '':
                 image_url = handle_image_upload(image_file)
@@ -581,7 +801,7 @@ def edit_product(product_id):
             product.price = float(request.form.get('price'))
             product.description = request.form.get('description')
             product.stock = int(request.form.get('stock'))
-            product.image_url = image_url 
+            product.image_url = image_url
             product.category_id = int(request.form.get('category_id'))
             
             db.session.commit()
@@ -598,7 +818,7 @@ def edit_product(product_id):
 @app.route('/delete_product/<int:product_id>', methods=['POST'])
 def delete_product(product_id):
     """مسار حذف منتج."""
-    if session.get('permissions', {}).get('products') != True: 
+    if session.get('permissions', {}).get('products') != True:
         flash('ليس لديك صلاحية لإدارة المنتجات.', 'error')
         return redirect(url_for('admin_panel'))
         
@@ -608,13 +828,53 @@ def delete_product(product_id):
     db.session.delete(product)
     db.session.commit()
     
-    flash(f'تم حذف المنتج {product_name} بنجاح.', 'success')
+    flash(f'⚠️ تم حذف المنتج {product_name} بنجاح! (إشعار إداري)', 'warning')
     return redirect(url_for('admin_panel'))
+
+# ===== مسارات إدارة الفئات =====
+
+@app.route('/add_category', methods=['POST'])
+def add_category():
+    """مسار إضافة فئة جديدة."""
+    if session.get('permissions', {}).get('products') != True:
+        flash('ليس لديك صلاحية لإدارة الفئات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
+    name = request.form.get('name')
+    if name:
+        new_category = Category(name=name)
+        db.session.add(new_category)
+        db.session.commit()
+        flash(f'تمت إضافة الفئة {name} بنجاح.', 'success')
+        return redirect(url_for('admin_panel'))
+    flash('خطأ: يجب توفير اسم للفئة.', 'error')
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/delete_category/<int:category_id>', methods=['POST'])
+def delete_category(category_id):
+    """مسار حذف فئة."""
+    if session.get('permissions', {}).get('products') != True:
+        flash('ليس لديك صلاحية لإدارة الفئات.', 'error')
+        return redirect(url_for('admin_panel'))
+        
+    category = Category.query.get_or_404(category_id)
+    
+    if category.products:
+        flash(f'لا يمكن حذف الفئة {category.name}. يجب نقل أو حذف المنتجات المرتبطة أولاً.', 'error')
+        return redirect(url_for('admin_panel'))
+    
+    db.session.delete(category)
+    db.session.commit()
+    flash(f'تم حذف الفئة {category.name} بنجاح.', 'success')
+    return redirect(url_for('admin_panel'))
+
+# ===== مسارات إدارة الطلبات =====
 
 @app.route('/update_order_status/<int:order_id>', methods=['POST'])
 def update_order_status(order_id):
     """مسار تحديث حالة الطلب."""
-    if session.get('permissions', {}).get('orders') != True: 
+    if session.get('permissions', {}).get('orders') != True:
         flash('ليس لديك صلاحية لإدارة الطلبات.', 'error')
         return redirect(url_for('admin_panel'))
         
@@ -630,53 +890,18 @@ def update_order_status(order_id):
     flash("حالة طلب غير صالحة", 'error')
     return redirect(url_for('admin_panel'))
 
+
 @app.route('/order_details/<int:order_id>')
 def order_details(order_id):
     """عرض تفاصيل الطلب."""
-    if session.get('permissions', {}).get('orders') != True: 
+    if session.get('permissions', {}).get('orders') != True:
         flash('ليس لديك صلاحية لعرض الطلبات.', 'error')
         return redirect(url_for('admin_panel'))
         
     order = Order.query.get_or_404(order_id)
     return render_template('order_details.html', order=order)
 
-@app.route('/add_category', methods=['POST'])
-def add_category():
-    """مسار إضافة فئة جديدة."""
-    if session.get('permissions', {}).get('products') != True: 
-        flash('ليس لديك صلاحية لإدارة الفئات.', 'error')
-        return redirect(url_for('admin_panel'))
-        
-    name = request.form.get('name')
-    if name:
-        new_category = Category(name=name)
-        db.session.add(new_category)
-        db.session.commit()
-        flash(f'تمت إضافة الفئة {name} بنجاح.', 'success')
-        return redirect(url_for('admin_panel'))
-    flash('خطأ: يجب توفير اسم للفئة.', 'error')
-    return redirect(url_for('admin_panel'))
-
-@app.route('/delete_category/<int:category_id>', methods=['POST'])
-def delete_category(category_id):
-    """مسار حذف فئة."""
-    if session.get('permissions', {}).get('products') != True: 
-        flash('ليس لديك صلاحية لإدارة الفئات.', 'error')
-        return redirect(url_for('admin_panel'))
-        
-    category = Category.query.get_or_404(category_id)
-    
-    if category.products:
-        flash(f'لا يمكن حذف الفئة {category.name}. يجب نقل أو حذف المنتجات المرتبطة أولاً.', 'error')
-        return redirect(url_for('admin_panel'))
-    
-    db.session.delete(category)
-    db.session.commit()
-    flash(f'تم حذف الفئة {category.name} بنجاح.', 'success')
-    return redirect(url_for('admin_panel'))
-
-
-# --- التشغيل والإعداد الأولي ---
+# ===== التشغيل والإعداد الأولي =====
 
 if __name__ == '__main__':
     with app.app_context():
@@ -684,7 +909,7 @@ if __name__ == '__main__':
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
             
-        db.create_all() 
+        db.create_all()
 
         # الإعداد الأولي: إضافة المشرف الرئيسي
         if AdminUser.query.count() == 0:
@@ -693,12 +918,12 @@ if __name__ == '__main__':
                 can_manage_products=True,
                 can_manage_orders=True,
                 can_manage_reviews=True,
-                can_manage_admins=True # المشرف الأول لديه كل الصلاحيات
+                can_manage_admins=True
             )
             initial_admin.set_password(ADMIN_PASSWORD_DEFAULT)
             db.session.add(initial_admin)
             db.session.commit()
-            print(f"تم إنشاء المشرف الرئيسي: {ADMIN_USERNAME_DEFAULT} (كلمة المرور: {ADMIN_PASSWORD_DEFAULT})")
+            print(f"تم إنشاء المشرف الرئيسي: {ADMIN_USERNAME_DEFAULT}")
             
         # إضافة بيانات تجريبية (فئات)
         if Category.query.count() == 0:
