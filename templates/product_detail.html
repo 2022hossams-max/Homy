@@ -35,8 +35,11 @@
         <h1>{{ product.name }}</h1>
         <a href="{{ url_for('home') }}" class="admin-link">العودة للمتجر</a>
         <span style="margin-left:12px;">
-            <a href="{{ url_for('set_currency', currency_code='USD') }}">USD</a> |
-            <a href="{{ url_for('set_currency', currency_code='SAR') }}">ريال</a>
+            <label for="currency-select-p" style="font-size:0.9em;">عملة:</label>
+            <select id="currency-select-p" style="margin-left:6px;">
+                <option value="USD" {% if current_currency() == 'USD' %}selected{% endif %}>USD</option>
+                <option value="SAR" {% if current_currency() == 'SAR' %}selected{% endif %}>ريال</option>
+            </select>
         </span>
     </header>
 
@@ -153,6 +156,19 @@
                 alert('فشل الاتصال بالخادم لإضافة المنتج.');
             }
         }
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function(){
+            const sel = document.getElementById('currency-select-p');
+            if(!sel) return;
+            sel.addEventListener('change', async function(){
+                const code = sel.value;
+                try{
+                    await fetch(`/set_currency/${code}`, { method: 'GET' });
+                }catch(e){/* ignore */}
+                window.location.reload();
+            });
+        });
     </script>
 </body>
 </html>
