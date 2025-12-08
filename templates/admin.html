@@ -25,6 +25,13 @@
             <span style="color: white; margin-left: 15px;">مرحباً، {{ session.get('username', 'مشرف') }}</span>
             <a href="{{ url_for('home') }}" class="admin-link">العودة للمتجر</a>
             <a href="{{ url_for('admin_logout') }}">تسجيل الخروج</a>
+            <span style="margin-left:12px;">
+                <label for="currency-select-admin" style="color:white;">عملة:</label>
+                <select id="currency-select-admin" style="margin-left:6px;">
+                    <option value="USD" {% if current_currency() == 'USD' %}selected{% endif %}>USD</option>
+                    <option value="SAR" {% if current_currency() == 'SAR' %}selected{% endif %}>ريال</option>
+                </select>
+            </span>
         </div>
     </header>
 
@@ -44,7 +51,7 @@
         <section class="admin-section dashboard-stats">
             <div class="stat-card">
                 <h3>💰 إجمالي المبيعات المكتملة</h3>
-                <p>${{ stats.total_sales | round(2) }}</p>
+                <p>{{ format_price(stats.total_sales) }}</p>
             </div>
             <div class="stat-card">
                 <h3>🔔 الطلبات الجديدة</h3>
@@ -213,7 +220,7 @@
                         <th>ID</th>
                         <th>الصورة</th>
                         <th>الاسم</th>
-                        <th>السعر ($)</th>
+                        <th>السعر</th>
                         <th>المخزون</th>
                         <th>الفئة</th>
                         <th>متوسط التقييم</th>
@@ -226,7 +233,7 @@
                             <td>{{ product.id }}</td>
                             <td><img src="{{ product.image_url }}" alt="{{ product.name }}" onerror="this.src='/static/placeholder.png'"></td>
                             <td>{{ product.name }}</td>
-                            <td>{{ product.price | round(2) }}</td>
+                            <td>{{ format_price(product.price) }}</td>
                             <td style="color: {% if product.stock <= 5 %}red; font-weight: bold;{% endif %}">{{ product.stock }}</td>
                             <td>{{ product.category.name if product.category else 'غير محدد' }}</td>
                             
@@ -358,7 +365,7 @@
                         <tr>
                             <td>{{ order.id }}</td>
                             <td>{{ order.customer_name }}</td>
-                            <td>{{ order.total_price | round(2) }}</td>
+                            <td>{{ format_price(order.total_price) }}</td>
                             <td>{{ order.date_placed.strftime('%Y-%m-%d %H:%M') }}</td>
                             <td>
                                 <form method="POST" action="{{ url_for('update_order_status', order_id=order.id) }}" style="display: inline;">
@@ -426,6 +433,19 @@
                         });
                     });
                 }
+            });
+        });
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function(){
+            const sel = document.getElementById('currency-select-admin');
+            if(!sel) return;
+            sel.addEventListener('change', async function(){
+                const code = sel.value;
+                try{
+                    await fetch(`/set_currency/${code}`, { method: 'GET' });
+                }catch(e){/* ignore */}
+                window.location.reload();
             });
         });
     </script>
